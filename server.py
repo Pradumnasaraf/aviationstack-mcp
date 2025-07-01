@@ -1,7 +1,7 @@
 import os
-import requests
 import json
 import random
+import requests
 from mcp.server.fastmcp import FastMCP
 
 # Create an MCP server
