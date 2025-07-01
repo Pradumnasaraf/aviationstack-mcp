@@ -1,3 +1,7 @@
+"""Aviationstack MCP server tools.
+
+Note: Ensure 'requests' and 'mcp' packages are installed and importable in your environment.
+"""
 import os
 import json
 import random
@@ -21,7 +25,10 @@ def fetch_flight_data(url: str, params: dict) -> dict:
 def flights_with_airline(airline_name: str, number_of_flights: int) -> str:
     """MCP tool to get flights with a specific airline."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/flights', {'airline_name': airline_name})
+        data = fetch_flight_data(
+            'http://api.aviationstack.com/v1/flights',
+            {'airline_name': airline_name}
+        )
         filtered_flights = []
         data_list = data.get('data', [])
         number_of_flights = min(number_of_flights, len(data_list))
@@ -43,17 +50,27 @@ def flights_with_airline(airline_name: str, number_of_flights: int) -> str:
                 'departure_terminal': flight.get('departure').get('terminal'),
                 'departure_gate': flight.get('departure').get('gate'),
             })
-        return json.dumps(filtered_flights) if filtered_flights else f"No flights found for airline '{airline_name}'."
+        return json.dumps(filtered_flights) if filtered_flights else (
+            f"No flights found for airline '{airline_name}'."
+        )
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
-    except Exception as e:
+    except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching flights: {str(e)}"
 
 @mcp.tool()
-def flight_arrival_departure_schedule(airport_iata_code: str, type: str, airline_name: str, number_of_flights: int) -> str:
+def flight_arrival_departure_schedule(
+    airport_iata_code: str,
+    schedule_type: str,
+    airline_name: str,
+    number_of_flights: int
+) -> str:
     """MCP tool to get flight arrival and departure schedule."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/timetable', {'iataCode': airport_iata_code, 'type': type, 'airline_name': airline_name})
+        data = fetch_flight_data(
+            'http://api.aviationstack.com/v1/timetable',
+            {'iataCode': airport_iata_code, 'type': schedule_type, 'airline_name': airline_name}
+        )
         data_list = data.get('data', [])
         number_of_flights = min(number_of_flights, len(data_list))
 
@@ -77,17 +94,33 @@ def flight_arrival_departure_schedule(airport_iata_code: str, type: str, airline
                 'arrival_gate': flight.get('arrival').get('gate'),
                 'departure_delay': flight.get('departure').get('delay'),
             })
-        return json.dumps(filtered_flights) if filtered_flights else f"No flights found for iata code '{airport_iata_code}'."
+        return json.dumps(filtered_flights) if filtered_flights else (
+            f"No flights found for iata code '{airport_iata_code}'."
+        )
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
-    except Exception as e:
+    except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching flight schedule: {str(e)}"
 
 @mcp.tool()
-def future_flights_arrival_departure_schedule(airport_iata_code: str, type: str, airline_iata: str, date: str, number_of_flights: int) -> str:
+def future_flights_arrival_departure_schedule(
+    airport_iata_code: str,
+    schedule_type: str,
+    airline_iata: str,
+    date: str,
+    number_of_flights: int
+) -> str:
     """MCP tool to get flight future arrival and departure schedule."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/flightsFuture', {'iataCode': airport_iata_code, 'type': type, 'airline_iata': airline_iata, 'date': date}) # date is in format YYYY-MM-DD
+        data = fetch_flight_data(
+            'http://api.aviationstack.com/v1/flightsFuture',
+            {
+                'iataCode': airport_iata_code,
+                'type': schedule_type,
+                'airline_iata': airline_iata,
+                'date': date
+            }
+        )  # date is in format YYYY-MM-DD
         data_list = data.get('data', [])
         number_of_flights = min(number_of_flights, len(data_list))
 
@@ -107,17 +140,19 @@ def future_flights_arrival_departure_schedule(airport_iata_code: str, type: str,
                 'arrival_gate': flight.get('arrival').get('gate'),
                 'aircraft': flight.get('aircraft').get('modelText')
             })
-        return json.dumps(filtered_flights) if filtered_flights else f"No flights found for iata code '{airport_iata_code}'."
+        return json.dumps(filtered_flights) if filtered_flights else (
+            f"No flights found for iata code '{airport_iata_code}'."
+        )
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
-    except Exception as e:
-        return f"Error fetching flight future schedule: {str(e)}"   
+    except (KeyError, ValueError, TypeError) as e:
+        return f"Error fetching flight future schedule: {str(e)}"
 
 @mcp.tool()
 def random_aircraft_type(number_of_aircraft: int) -> str:
     """MCP tool to get random aircraft type."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types',{})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types', {})
         data_list = data.get('data', [])
         number_of_aircraft = min(number_of_aircraft, len(data_list))
 
@@ -133,9 +168,9 @@ def random_aircraft_type(number_of_aircraft: int) -> str:
         return json.dumps(aircraft_types)
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
-    except Exception as e:
+    except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching aircraft type: {str(e)}"
-    
+
 @mcp.tool()
 def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
     """MCP tool to get random airplanes."""
@@ -164,10 +199,11 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
         return json.dumps(airplanes)
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
-    except Exception as e:
+    except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching airplanes: {str(e)}"
 
 def main():
+    """Run the MCP server."""
     mcp.run()
 
 if __name__ == "__main__":
