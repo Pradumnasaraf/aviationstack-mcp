@@ -1,8 +1,8 @@
-from mcp.server.fastmcp import FastMCP
 import os
 import requests
 import json
 import random
+from mcp.server.fastmcp import FastMCP
 
 # Create an MCP server
 mcp = FastMCP("Aviationstack MCP")
