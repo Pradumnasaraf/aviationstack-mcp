@@ -17,7 +17,7 @@ def fetch_flight_data(url: str, params: dict) -> dict:
     if not api_key:
         raise ValueError("AVIATION_STACK_API_KEY not set in environment.")
     params = {'access_key': api_key, **params}
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=10)
     response.raise_for_status()
     return response.json()
 
