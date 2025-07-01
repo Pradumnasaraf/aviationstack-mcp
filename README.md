@@ -20,7 +20,7 @@ All endpoints are implemented as MCP tools and are ready to be used in an MCP-co
 
 ## Available Tools
 
-### 1. `flights_with_airline(airline_name: str, number_of_flights: int)`
+#### 1. `flights_with_airline(airline_name: str, number_of_flights: int)`
 
 Get a random sample of flights for a specific airline.
 
@@ -28,7 +28,7 @@ Get a random sample of flights for a specific airline.
   - `airline_name`: Name of the airline (e.g., "Delta Air Lines")
   - `number_of_flights`: Number of flights to return
 
-### 2. `flight_arrival_departure_schedule(airport_iata_code: str, type: str, airline_name: str, number_of_flights: int)`
+#### 2. `flight_arrival_departure_schedule(airport_iata_code: str, type: str, airline_name: str, number_of_flights: int)`
 
 Get arrival or departure schedules for a given airport and airline.
 
@@ -38,7 +38,7 @@ Get arrival or departure schedules for a given airport and airline.
   - `airline_name`: Name of the airline
   - `number_of_flights`: Number of flights to return
 
-### 3. `future_flights_arrival_departure_schedule(airport_iata_code: str, type: str, airline_iata: str, date: str, number_of_flights: int)`
+#### 3. `future_flights_arrival_departure_schedule(airport_iata_code: str, type: str, airline_iata: str, date: str, number_of_flights: int)`
 
 Get future scheduled flights for a given airport, airline, and date.
 
@@ -49,7 +49,7 @@ Get future scheduled flights for a given airport, airline, and date.
   - `date`: Date in `YYYY-MM-DD` format
   - `number_of_flights`: Number of flights to return
 
-### 4. `random_aircraft_type(number_of_aircraft: int)`
+#### 4. `random_aircraft_type(number_of_aircraft: int)`
 
 Get random aircraft types.
 
