@@ -13,6 +13,7 @@ https://github.com/user-attachments/assets/9325fcce-8ecc-4b01-8923-4ccb2f6968f4
 - **Fetch future flight schedules**
 - **Get random aircraft types**
 - **Get detailed info on random airplanes**
+- **Get detailed info on random countries**
 
 All endpoints are implemented as MCP tools and are ready to be used in an MCP-compatible environment.
 
@@ -31,6 +32,7 @@ All endpoints are implemented as MCP tools and are ready to be used in an MCP-co
 | `future_flights_arrival_departure_schedule(airport_iata_code: str, schedule_type: str, airline_iata: str, date: str, number_of_flights: int)` | Get future scheduled flights for a given airport, airline, and date. | - **`airport_iata_code`** : IATA code of the airport<br> - **`schedule_type`**: "arrival" or "departure"<br> - **`airline_iata`**: IATA code of the airline (e.g., "DL" for Delta)<br> - **`date`**: Date in `YYYY-MM-DD` format<br> - **`number_of_flights`**: Number of flights to return |
 | `random_aircraft_type(number_of_aircraft: int)` | Get random aircraft types. | - **`number_of_aircraft`**: Number of aircraft types to return |
 | `random_airplanes_detailed_info(number_of_airplanes: int)` | Get detailed info on random airplanes. | - **`number_of_airplanes`**: Number of airplanes to return |
+| `random_countries_detailed_info(number_of_countries: int)` | Get detailed info on random countries. | - **`number_of_countries`**: Number of countries to return |
 
 ### Development
 

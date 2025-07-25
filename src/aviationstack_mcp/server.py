@@ -8,9 +8,9 @@ import random
 import requests
 from mcp.server.fastmcp import FastMCP
 
-# Create an MCP server
 mcp = FastMCP("Aviationstack MCP")
 
+# Fetch flight data from the AviationStack API.
 def fetch_flight_data(url: str, params: dict) -> dict:
     """Fetch flight data from the AviationStack API."""
     api_key = os.getenv('AVIATION_STACK_API_KEY')
@@ -21,20 +21,21 @@ def fetch_flight_data(url: str, params: dict) -> dict:
     response.raise_for_status()
     return response.json()
 
+# MCP tool to get flights with a specific airline.
 @mcp.tool()
 def flights_with_airline(airline_name: str, number_of_flights: int) -> str:
     """MCP tool to get flights with a specific airline."""
     try:
         data = fetch_flight_data(
             'http://api.aviationstack.com/v1/flights',
-            {'airline_name': airline_name}
+            {'airline_name': airline_name, 'limit': number_of_flights}
         )
         filtered_flights = []
         data_list = data.get('data', [])
-        number_of_flights = min(number_of_flights, len(data_list))
+        number_of_flights_to_fetch = min(number_of_flights, len(data_list))
 
         # Sample random flights from the data list
-        sampled_flights = random.sample(data_list, number_of_flights)
+        sampled_flights = random.sample(data_list, number_of_flights_to_fetch)
 
         for flight in sampled_flights:
             filtered_flights.append({
@@ -102,6 +103,7 @@ def flight_arrival_departure_schedule(
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching flight schedule: {str(e)}"
 
+# MCP tool to get future flight arrival and departure schedule.
 @mcp.tool()
 def future_flights_arrival_departure_schedule(
     airport_iata_code: str,
@@ -118,7 +120,7 @@ def future_flights_arrival_departure_schedule(
                 'iataCode': airport_iata_code,
                 'type': schedule_type,
                 'airline_iata': airline_iata,
-                'date': date
+                'date': date,
             }
         )  # date is in format YYYY-MM-DD
         data_list = data.get('data', [])
@@ -148,16 +150,17 @@ def future_flights_arrival_departure_schedule(
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching flight future schedule: {str(e)}"
 
+# MCP tool to get random aircraft type.
 @mcp.tool()
 def random_aircraft_type(number_of_aircraft: int) -> str:
     """MCP tool to get random aircraft type."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types', {})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types', {'limit': number_of_aircraft})
         data_list = data.get('data', [])
-        number_of_aircraft = min(number_of_aircraft, len(data_list))
+        number_of_aircraft_to_fetch = min(number_of_aircraft, len(data_list))
 
         # Sample random aircraft types from the data list
-        sampled_aircraft_types = random.sample(data_list, number_of_aircraft)
+        sampled_aircraft_types = random.sample(data_list, number_of_aircraft_to_fetch)
 
         aircraft_types = []
         for aircraft_type in sampled_aircraft_types:
@@ -171,16 +174,17 @@ def random_aircraft_type(number_of_aircraft: int) -> str:
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching aircraft type: {str(e)}"
 
+# MCP tool to get random airplanes detailed info.
 @mcp.tool()
 def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
     """MCP tool to get random airplanes."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/airplanes', {})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/airplanes', {'limit': number_of_airplanes})
         data_list = data.get('data', [])
-        number_of_airplanes = min(number_of_airplanes, len(data_list))
+        number_of_airplanes_to_fetch = min(number_of_airplanes, len(data_list))  
 
         # Sample random airplanes from the data list
-        sampled_airplanes = random.sample(data_list, number_of_airplanes)
+        sampled_airplanes = random.sample(data_list, number_of_airplanes_to_fetch)
 
         airplanes = []
         for airplane in sampled_airplanes:
@@ -189,15 +193,52 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
                 'plane_owner': airplane.get('plane_owner'),
                 'plane_age': airplane.get('plane_age'),
                 'model_name': airplane.get('model_name'),
+                'model_code': airplane.get('model_code'),
                 'plane_series': airplane.get('plane_series'),
                 'registration_number': airplane.get('registration_number'),
                 'engines_type': airplane.get('engines_type'),
                 'engines_count': airplane.get('engines_count'),
                 'delivery_date': airplane.get('delivery_date'),
                 'first_flight_date': airplane.get('first_flight_date'),
+                'plane_status': airplane.get('plane_status'),
+                'plane_series': airplane.get('plane_series'),
             })
         return json.dumps(airplanes)
     except requests.RequestException as e:
         return f"Request error: {str(e)}"
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching airplanes: {str(e)}"
+
+# MCP tool to get random countries detailed info.
+@mcp.tool()
+def random_countries_detailed_info(number_of_countries: int) -> str:
+    """MCP tool to get random countries detailed info."""
+    try:
+        data = fetch_flight_data('http://api.aviationstack.com/v1/countries', {'limit': number_of_countries})
+        data_list = data.get('data', [])
+        number_of_countries_to_fetch = min(number_of_countries, len(data_list))
+
+        # Sample random countries from the data list
+        sampled_countries = random.sample(data_list, number_of_countries_to_fetch)
+
+        countries = []
+        for country in sampled_countries:
+            countries.append({
+                'country_name': country.get('name'),
+                'capital': country.get('capital'),
+                'currency_code': country.get('currency_code'),
+                'fips_code': country.get('fips_code'),
+                'country_iso2': country.get('country_iso2'),
+                'country_iso3': country.get('country_iso3'),
+                'continent': country.get('continent'),
+                'country_id': country.get('country_id'),
+                'currency_name': country.get('currency_name'),
+                'country_iso_numeric': country.get('country_iso_numeric'),
+                'phone_prefix': country.get('phone_prefix'),
+                'population': country.get('population'),
+            })
+        return json.dumps(countries)
+    except requests.RequestException as e:
+        return f"Request error: {str(e)}"
+    except (KeyError, ValueError, TypeError) as e:
+        return f"Error fetching countries: {str(e)}"
