@@ -155,7 +155,9 @@ def future_flights_arrival_departure_schedule(
 def random_aircraft_type(number_of_aircraft: int) -> str:
     """MCP tool to get random aircraft type."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types', {'limit': number_of_aircraft})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/aircraft_types', {
+            'limit': number_of_aircraft
+        })
         data_list = data.get('data', [])
         number_of_aircraft_to_fetch = min(number_of_aircraft, len(data_list))
 
@@ -179,9 +181,11 @@ def random_aircraft_type(number_of_aircraft: int) -> str:
 def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
     """MCP tool to get random airplanes."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/airplanes', {'limit': number_of_airplanes})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/airplanes', {
+            'limit': number_of_airplanes
+        })
         data_list = data.get('data', [])
-        number_of_airplanes_to_fetch = min(number_of_airplanes, len(data_list))  
+        number_of_airplanes_to_fetch = min(number_of_airplanes, len(data_list))
 
         # Sample random airplanes from the data list
         sampled_airplanes = random.sample(data_list, number_of_airplanes_to_fetch)
@@ -200,8 +204,6 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
                 'engines_count': airplane.get('engines_count'),
                 'delivery_date': airplane.get('delivery_date'),
                 'first_flight_date': airplane.get('first_flight_date'),
-                'plane_status': airplane.get('plane_status'),
-                'plane_series': airplane.get('plane_series'),
             })
         return json.dumps(airplanes)
     except requests.RequestException as e:
@@ -214,7 +216,9 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
 def random_countries_detailed_info(number_of_countries: int) -> str:
     """MCP tool to get random countries detailed info."""
     try:
-        data = fetch_flight_data('http://api.aviationstack.com/v1/countries', {'limit': number_of_countries})
+        data = fetch_flight_data('http://api.aviationstack.com/v1/countries', {
+            'limit': number_of_countries
+        })
         data_list = data.get('data', [])
         number_of_countries_to_fetch = min(number_of_countries, len(data_list))
 
