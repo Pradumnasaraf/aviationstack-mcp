@@ -14,6 +14,7 @@ https://github.com/user-attachments/assets/9325fcce-8ecc-4b01-8923-4ccb2f6968f4
 - **Get random aircraft types**
 - **Get detailed info on random airplanes**
 - **Get detailed info on random countries**
+- **Get detailed info on random cities**
 
 All endpoints are implemented as MCP tools and are ready to be used in an MCP-compatible environment.
 
@@ -33,6 +34,7 @@ All endpoints are implemented as MCP tools and are ready to be used in an MCP-co
 | `random_aircraft_type(number_of_aircraft: int)` | Get random aircraft types. | - **`number_of_aircraft`**: Number of aircraft types to return |
 | `random_airplanes_detailed_info(number_of_airplanes: int)` | Get detailed info on random airplanes. | - **`number_of_airplanes`**: Number of airplanes to return |
 | `random_countries_detailed_info(number_of_countries: int)` | Get detailed info on random countries. | - **`number_of_countries`**: Number of countries to return |
+| `random_cities_detailed_info(number_of_cities: int)` | Get detailed info on random cities. | - **`number_of_cities`**: Number of cities to return |
 
 ### Development
 

@@ -246,3 +246,36 @@ def random_countries_detailed_info(number_of_countries: int) -> str:
         return f"Request error: {str(e)}"
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching countries: {str(e)}"
+    
+# MCP tool to get random cities detailed info.
+@mcp.tool()
+def random_cities_detailed_info(number_of_cities: int) -> str:
+    """MCP tool to get random cities detailed info."""
+    try:
+        data = fetch_flight_data('http://api.aviationstack.com/v1/cities', {
+            'limit': number_of_cities
+        })
+        data_list = data.get('data', [])
+        number_of_cities_to_fetch = min(number_of_cities, len(data_list))
+
+        # Sample random cities from the data list
+        sampled_cities = random.sample(data_list, number_of_cities_to_fetch)
+
+        cities = []
+        for city in sampled_cities:
+            cities.append({
+                'gmt': city.get('gmt'),
+                'city_id': city.get('city_id'),
+                'iata_code': city.get('iata_code'),
+                'country_iso2': city.get('country_iso2'),
+                'geoname_id': city.get('geoname_id'),
+                'latitude': city.get('latitude'),
+                'longitude': city.get('longitude'),
+                'timezone': city.get('timezone'),
+                'city_name': city.get('city_name'),
+            })
+        return json.dumps(cities)
+    except requests.RequestException as e:
+        return f"Request error: {str(e)}"
+    except (KeyError, ValueError, TypeError) as e:
+        return f"Error fetching cities: {str(e)}"
