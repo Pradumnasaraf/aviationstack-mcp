@@ -246,7 +246,7 @@ def random_countries_detailed_info(number_of_countries: int) -> str:
         return f"Request error: {str(e)}"
     except (KeyError, ValueError, TypeError) as e:
         return f"Error fetching countries: {str(e)}"
-    
+
 # MCP tool to get random cities detailed info.
 @mcp.tool()
 def random_cities_detailed_info(number_of_cities: int) -> str:
