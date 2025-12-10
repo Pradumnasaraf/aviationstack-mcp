@@ -2,6 +2,12 @@
 
 This project is an **MCP (Model Context Protocol) server** that provides a set of tools to interact with the [AviationStack API](https://aviationstack.com/). It exposes endpoints for retrieving real-time and future flight data, aircraft types, and airplane details, making it easy to integrate aviation data into your applications.
 
+You can also find the Aviationstack MCP server in these well-known MCP server repositories for easy access:
+
+- [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file#-community-servers)
+- [punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers?tab=readme-ov-file#-travel--transportation)
+- [glama](https://glama.ai/mcp/servers/@Pradumnasaraf/aviationstack-mcp)
+
 ### Demo
 
 https://github.com/user-attachments/assets/9325fcce-8ecc-4b01-8923-4ccb2f6968f4
