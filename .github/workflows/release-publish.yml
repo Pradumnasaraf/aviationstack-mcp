@@ -50,6 +50,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify version matches release tag
+        run: |
+          TAG="${{ needs.create-release.outputs.tag }}"
+          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v$VER" = "$TAG"
 
       - name: Install uv and setup the python version
         uses: astral-sh/setup-uv@v6
