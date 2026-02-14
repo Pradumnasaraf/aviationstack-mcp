@@ -1,6 +1,6 @@
 [project]
 name = "aviationstack-mcp"
-version = "1.5.0"
+version = "1.5.1"
 description = "An MCP server using the AviationStack API to fetch real-time flight data including airline flights, airport schedules, future flights and aircraft types"
 readme = "README.md"
 authors = [
