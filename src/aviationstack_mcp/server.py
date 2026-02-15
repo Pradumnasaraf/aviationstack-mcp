@@ -1,4 +1,5 @@
 """Aviationstack MCP server tools."""
+# pylint: disable=too-many-lines
 
 import json
 import os
@@ -24,14 +25,28 @@ CONFIG_SCHEMA = {
     "additionalProperties": False,
 }
 
-mcp = FastMCP(
-    "Aviationstack MCP",
-    instructions=(
-        "Use these tools to fetch real-time, historical, and reference aviation data from "
-        "Aviationstack. Provide IATA/ICAO codes when available and request small limits first."
-    ),
-    config_schema=CONFIG_SCHEMA,
+MCP_INSTRUCTIONS = (
+    "Use these tools to fetch real-time, historical, and reference aviation data from "
+    "Aviationstack. Provide IATA/ICAO codes when available and request small limits first."
 )
+
+
+def _create_mcp_server() -> FastMCP:
+    """Create FastMCP with compatibility for versions lacking config_schema."""
+    mcp_kwargs: dict[str, Any] = {
+        "instructions": MCP_INSTRUCTIONS,
+        "config_schema": CONFIG_SCHEMA,
+    }
+    try:
+        return FastMCP("Aviationstack MCP", **mcp_kwargs)
+    except TypeError as exc:
+        if "config_schema" not in str(exc):
+            raise
+        mcp_kwargs.pop("config_schema", None)
+        return FastMCP("Aviationstack MCP", **mcp_kwargs)
+
+
+mcp = _create_mcp_server()
 
 API_BASE_URL = "https://api.aviationstack.com/v1"
 
@@ -787,16 +802,18 @@ def flights_with_airline_tool(
     airline_name: Annotated[
         str, Field(description="Airline name to filter flights (for example: Delta Air Lines).")
     ],
-    number_of_flights: Annotated[int, Field(description="Number of random flights to return.", gt=0)],
+    number_of_flights: Annotated[
+        int, Field(description="Number of random flights to return.", gt=0)
+    ],
 ) -> str:
     """Tool wrapper for flights_with_airline."""
-    input = FlightsWithAirlineInput(
+    validated_input = FlightsWithAirlineInput(
         airline_name=airline_name,
         number_of_flights=number_of_flights,
     )
     return flights_with_airline(
-        airline_name=input.airline_name,
-        number_of_flights=input.number_of_flights,
+        airline_name=validated_input.airline_name,
+        number_of_flights=validated_input.number_of_flights,
     )
 
 
@@ -808,9 +825,15 @@ def flights_with_airline_tool(
     ),
 )
 def historical_flights_by_date_tool(
-    flight_date: Annotated[str, Field(description="Date in YYYY-MM-DD format.", examples=["2026-03-01"])],
-    number_of_flights: Annotated[int, Field(description="Number of random flights to return.", gt=0)],
-    airline_iata: Annotated[str, Field(description="Optional airline IATA code filter (for example: DL).")] = "",
+    flight_date: Annotated[
+        str, Field(description="Date in YYYY-MM-DD format.", examples=["2026-03-01"])
+    ],
+    number_of_flights: Annotated[
+        int, Field(description="Number of random flights to return.", gt=0)
+    ],
+    airline_iata: Annotated[
+        str, Field(description="Optional airline IATA code filter (for example: DL).")
+    ] = "",
     dep_iata: Annotated[
         str, Field(description="Optional departure airport IATA code filter (for example: JFK).")
     ] = "",
@@ -819,7 +842,7 @@ def historical_flights_by_date_tool(
     ] = "",
 ) -> str:
     """Tool wrapper for historical_flights_by_date."""
-    input = HistoricalFlightsByDateInput(
+    validated_input = HistoricalFlightsByDateInput(
         flight_date=flight_date,
         number_of_flights=number_of_flights,
         airline_iata=airline_iata,
@@ -827,11 +850,11 @@ def historical_flights_by_date_tool(
         arr_iata=arr_iata,
     )
     return historical_flights_by_date(
-        flight_date=input.flight_date,
-        number_of_flights=input.number_of_flights,
-        airline_iata=input.airline_iata,
-        dep_iata=input.dep_iata,
-        arr_iata=input.arr_iata,
+        flight_date=validated_input.flight_date,
+        number_of_flights=validated_input.number_of_flights,
+        airline_iata=validated_input.airline_iata,
+        dep_iata=validated_input.dep_iata,
+        arr_iata=validated_input.arr_iata,
     )
 
 
@@ -843,23 +866,27 @@ def historical_flights_by_date_tool(
     ),
 )
 def flight_arrival_departure_schedule_tool(
-    airport_iata_code: Annotated[str, Field(description="Airport IATA code (for example: SFO).", min_length=1)],
+    airport_iata_code: Annotated[
+        str, Field(description="Airport IATA code (for example: SFO).", min_length=1)
+    ],
     schedule_type: Annotated[str, Field(description="Schedule type: arrival or departure.")],
     airline_name: Annotated[str, Field(description="Optional airline name filter.")] = "",
-    number_of_flights: Annotated[int, Field(description="Number of random flights to return.", gt=0)] = 5,
+    number_of_flights: Annotated[
+        int, Field(description="Number of random flights to return.", gt=0)
+    ] = 5,
 ) -> str:
     """Tool wrapper for flight_arrival_departure_schedule."""
-    input = FlightArrivalDepartureScheduleInput(
+    validated_input = FlightArrivalDepartureScheduleInput(
         airport_iata_code=airport_iata_code,
         schedule_type=schedule_type,
         airline_name=airline_name,
         number_of_flights=number_of_flights,
     )
     return flight_arrival_departure_schedule(
-        airport_iata_code=input.airport_iata_code,
-        schedule_type=input.schedule_type,
-        airline_name=input.airline_name,
-        number_of_flights=input.number_of_flights,
+        airport_iata_code=validated_input.airport_iata_code,
+        schedule_type=validated_input.schedule_type,
+        airline_name=validated_input.airline_name,
+        number_of_flights=validated_input.number_of_flights,
     )
 
 
@@ -868,14 +895,23 @@ def flight_arrival_departure_schedule_tool(
     description="Return future arrival or departure schedule samples for an airport and date.",
 )
 def future_flights_arrival_departure_schedule_tool(
-    airport_iata_code: Annotated[str, Field(description="Airport IATA code (for example: SFO).", min_length=1)],
+    airport_iata_code: Annotated[
+        str, Field(description="Airport IATA code (for example: SFO).", min_length=1)
+    ],
     schedule_type: Annotated[str, Field(description="Schedule type: arrival or departure.")],
-    airline_iata: Annotated[str, Field(description="Optional airline IATA code filter (for example: UA).")] = "",
-    date: Annotated[str, Field(description="Future date in YYYY-MM-DD format.", examples=["2026-03-01"])] = "",
-    number_of_flights: Annotated[int, Field(description="Number of random flights to return.", gt=0)] = 5,
+    airline_iata: Annotated[
+        str, Field(description="Optional airline IATA code filter (for example: UA).")
+    ] = "",
+    date: Annotated[
+        str,
+        Field(description="Future date in YYYY-MM-DD format.", examples=["2026-03-01"]),
+    ] = "",
+    number_of_flights: Annotated[
+        int, Field(description="Number of random flights to return.", gt=0)
+    ] = 5,
 ) -> str:
     """Tool wrapper for future_flights_arrival_departure_schedule."""
-    input = FutureFlightsArrivalDepartureScheduleInput(
+    validated_input = FutureFlightsArrivalDepartureScheduleInput(
         airport_iata_code=airport_iata_code,
         schedule_type=schedule_type,
         airline_iata=airline_iata,
@@ -883,11 +919,11 @@ def future_flights_arrival_departure_schedule_tool(
         number_of_flights=number_of_flights,
     )
     return future_flights_arrival_departure_schedule(
-        airport_iata_code=input.airport_iata_code,
-        schedule_type=input.schedule_type,
-        airline_iata=input.airline_iata,
-        date=input.date,
-        number_of_flights=input.number_of_flights,
+        airport_iata_code=validated_input.airport_iata_code,
+        schedule_type=validated_input.schedule_type,
+        airline_iata=validated_input.airline_iata,
+        date=validated_input.date,
+        number_of_flights=validated_input.number_of_flights,
     )
 
 
@@ -901,8 +937,8 @@ def random_aircraft_type_tool(
     ],
 ) -> str:
     """Tool wrapper for random_aircraft_type."""
-    input = RandomAircraftTypeInput(number_of_aircraft=number_of_aircraft)
-    return random_aircraft_type(number_of_aircraft=input.number_of_aircraft)
+    validated_input = RandomAircraftTypeInput(number_of_aircraft=number_of_aircraft)
+    return random_aircraft_type(number_of_aircraft=validated_input.number_of_aircraft)
 
 
 @mcp.tool(
@@ -910,11 +946,17 @@ def random_aircraft_type_tool(
     description="Return detailed metadata for random airplanes.",
 )
 def random_airplanes_detailed_info_tool(
-    number_of_airplanes: Annotated[int, Field(description="Number of random airplanes to return.", gt=0)],
+    number_of_airplanes: Annotated[
+        int, Field(description="Number of random airplanes to return.", gt=0)
+    ],
 ) -> str:
     """Tool wrapper for random_airplanes_detailed_info."""
-    input = RandomAirplanesDetailedInfoInput(number_of_airplanes=number_of_airplanes)
-    return random_airplanes_detailed_info(number_of_airplanes=input.number_of_airplanes)
+    validated_input = RandomAirplanesDetailedInfoInput(
+        number_of_airplanes=number_of_airplanes
+    )
+    return random_airplanes_detailed_info(
+        number_of_airplanes=validated_input.number_of_airplanes
+    )
 
 
 @mcp.tool(
@@ -922,11 +964,17 @@ def random_airplanes_detailed_info_tool(
     description="Return detailed metadata for random countries.",
 )
 def random_countries_detailed_info_tool(
-    number_of_countries: Annotated[int, Field(description="Number of random countries to return.", gt=0)],
+    number_of_countries: Annotated[
+        int, Field(description="Number of random countries to return.", gt=0)
+    ],
 ) -> str:
     """Tool wrapper for random_countries_detailed_info."""
-    input = RandomCountriesDetailedInfoInput(number_of_countries=number_of_countries)
-    return random_countries_detailed_info(number_of_countries=input.number_of_countries)
+    validated_input = RandomCountriesDetailedInfoInput(
+        number_of_countries=number_of_countries
+    )
+    return random_countries_detailed_info(
+        number_of_countries=validated_input.number_of_countries
+    )
 
 
 @mcp.tool(
@@ -934,11 +982,13 @@ def random_countries_detailed_info_tool(
     description="Return detailed metadata for random cities.",
 )
 def random_cities_detailed_info_tool(
-    number_of_cities: Annotated[int, Field(description="Number of random cities to return.", gt=0)],
+    number_of_cities: Annotated[
+        int, Field(description="Number of random cities to return.", gt=0)
+    ],
 ) -> str:
     """Tool wrapper for random_cities_detailed_info."""
-    input = RandomCitiesDetailedInfoInput(number_of_cities=number_of_cities)
-    return random_cities_detailed_info(number_of_cities=input.number_of_cities)
+    validated_input = RandomCitiesDetailedInfoInput(number_of_cities=number_of_cities)
+    return random_cities_detailed_info(number_of_cities=validated_input.number_of_cities)
 
 
 @mcp.tool(
@@ -948,11 +998,17 @@ def random_cities_detailed_info_tool(
 def list_airports_tool(
     limit: Annotated[int, Field(description="Maximum number of airports to return.", gt=0)] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
-    search: Annotated[str, Field(description="Optional airport search text for autocomplete.")] = "",
+    search: Annotated[
+        str, Field(description="Optional airport search text for autocomplete.")
+    ] = "",
 ) -> str:
     """Tool wrapper for list_airports."""
-    input = ListAirportsInput(limit=limit, offset=offset, search=search)
-    return list_airports(limit=input.limit, offset=input.offset, search=input.search)
+    validated_input = ListAirportsInput(limit=limit, offset=offset, search=search)
+    return list_airports(
+        limit=validated_input.limit,
+        offset=validated_input.offset,
+        search=validated_input.search,
+    )
 
 
 @mcp.tool(
@@ -962,11 +1018,17 @@ def list_airports_tool(
 def list_airlines_tool(
     limit: Annotated[int, Field(description="Maximum number of airlines to return.", gt=0)] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
-    search: Annotated[str, Field(description="Optional airline search text for autocomplete.")] = "",
+    search: Annotated[
+        str, Field(description="Optional airline search text for autocomplete.")
+    ] = "",
 ) -> str:
     """Tool wrapper for list_airlines."""
-    input = ListAirlinesInput(limit=limit, offset=offset, search=search)
-    return list_airlines(limit=input.limit, offset=input.offset, search=input.search)
+    validated_input = ListAirlinesInput(limit=limit, offset=offset, search=search)
+    return list_airlines(
+        limit=validated_input.limit,
+        offset=validated_input.offset,
+        search=validated_input.search,
+    )
 
 
 @mcp.tool(
@@ -976,12 +1038,18 @@ def list_airlines_tool(
 def list_routes_tool(
     limit: Annotated[int, Field(description="Maximum number of routes to return.", gt=0)] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
-    airline_iata: Annotated[str, Field(description="Optional airline IATA code filter.")] = "",
-    dep_iata: Annotated[str, Field(description="Optional departure airport IATA code filter.")] = "",
-    arr_iata: Annotated[str, Field(description="Optional arrival airport IATA code filter.")] = "",
+    airline_iata: Annotated[
+        str, Field(description="Optional airline IATA code filter.")
+    ] = "",
+    dep_iata: Annotated[
+        str, Field(description="Optional departure airport IATA code filter.")
+    ] = "",
+    arr_iata: Annotated[
+        str, Field(description="Optional arrival airport IATA code filter.")
+    ] = "",
 ) -> str:
     """Tool wrapper for list_routes."""
-    input = ListRoutesInput(
+    validated_input = ListRoutesInput(
         limit=limit,
         offset=offset,
         airline_iata=airline_iata,
@@ -989,11 +1057,11 @@ def list_routes_tool(
         arr_iata=arr_iata,
     )
     return list_routes(
-        limit=input.limit,
-        offset=input.offset,
-        airline_iata=input.airline_iata,
-        dep_iata=input.dep_iata,
-        arr_iata=input.arr_iata,
+        limit=validated_input.limit,
+        offset=validated_input.offset,
+        airline_iata=validated_input.airline_iata,
+        dep_iata=validated_input.dep_iata,
+        arr_iata=validated_input.arr_iata,
     )
 
 
@@ -1002,13 +1070,19 @@ def list_routes_tool(
     description="List aviation taxes with pagination and optional search.",
 )
 def list_taxes_tool(
-    limit: Annotated[int, Field(description="Maximum number of tax records to return.", gt=0)] = 10,
+    limit: Annotated[
+        int, Field(description="Maximum number of tax records to return.", gt=0)
+    ] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
     search: Annotated[str, Field(description="Optional tax search text.")] = "",
 ) -> str:
     """Tool wrapper for list_taxes."""
-    input = ListTaxesInput(limit=limit, offset=offset, search=search)
-    return list_taxes(limit=input.limit, offset=input.offset, search=input.search)
+    validated_input = ListTaxesInput(limit=limit, offset=offset, search=search)
+    return list_taxes(
+        limit=validated_input.limit,
+        offset=validated_input.offset,
+        search=validated_input.search,
+    )
 
 
 @mcp.prompt(
@@ -1033,8 +1107,12 @@ def plan_airline_flight_lookup(
 )
 def plan_future_schedule_lookup(
     airport_iata_code: Annotated[str, Field(description="Airport IATA code (for example: SFO).")],
-    date: Annotated[str, Field(description="Future date in YYYY-MM-DD format.", examples=["2026-03-01"])],
-    schedule_type: Annotated[str, Field(description="Schedule type: arrival or departure.")] = "departure",
+    date: Annotated[
+        str, Field(description="Future date in YYYY-MM-DD format.", examples=["2026-03-01"])
+    ],
+    schedule_type: Annotated[
+        str, Field(description="Schedule type: arrival or departure.")
+    ] = "departure",
 ) -> str:
     """Prompt for future schedule lookup."""
     return (

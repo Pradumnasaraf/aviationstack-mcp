@@ -132,6 +132,27 @@ class ServerToolTests(unittest.TestCase):
         self.assertIsInstance(parsed, list)
         self.assertEqual(parsed[0]["iata_code"], "SFO")
 
+    def test_create_mcp_server_falls_back_when_config_schema_is_unsupported(self):
+        """Server creation should retry without config_schema on older FastMCP versions."""
+        call_kwargs = []
+
+        def fake_fastmcp(_name, **kwargs):
+            call_kwargs.append(kwargs.copy())
+            if "config_schema" in kwargs:
+                raise TypeError(
+                    "FastMCP.__init__() got an unexpected keyword argument "
+                    "'config_schema'"
+                )
+            return object()
+
+        with patch("aviationstack_mcp.server.FastMCP", side_effect=fake_fastmcp):
+            result = server._create_mcp_server()
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(call_kwargs), 2)
+        self.assertIn("config_schema", call_kwargs[0])
+        self.assertNotIn("config_schema", call_kwargs[1])
+
 
 if __name__ == "__main__":
     unittest.main()
