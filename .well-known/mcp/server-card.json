@@ -1,0 +1,618 @@
+{
+  "serverInfo": {
+    "name": "aviationstack-mcp",
+    "title": "Aviationstack MCP",
+    "version": "1.5.1",
+    "description": "MCP server for Aviationstack flight, schedule, and aviation reference data.",
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "aviationstack_api_key": {
+          "type": "string",
+          "description": "Aviationstack API key used to authenticate API requests.",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "aviationstack_api_key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "tools": [
+    {
+      "name": "flights_with_airline",
+      "description": "Return a random sample of live flights filtered by airline name.",
+      "inputSchema": {
+        "properties": {
+          "airline_name": {
+            "description": "Airline name to filter flights (for example: Delta Air Lines).",
+            "title": "Airline Name",
+            "type": "string"
+          },
+          "number_of_flights": {
+            "description": "Number of random flights to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Flights",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "airline_name",
+          "number_of_flights"
+        ],
+        "title": "flights_with_airline_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "flights_with_airline_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "historical_flights_by_date",
+      "description": "Return a random sample of historical flights for a date with optional airline and route filters.",
+      "inputSchema": {
+        "properties": {
+          "flight_date": {
+            "description": "Date in YYYY-MM-DD format.",
+            "examples": [
+              "2026-03-01"
+            ],
+            "title": "Flight Date",
+            "type": "string"
+          },
+          "number_of_flights": {
+            "description": "Number of random flights to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Flights",
+            "type": "integer"
+          },
+          "airline_iata": {
+            "default": "",
+            "description": "Optional airline IATA code filter (for example: DL).",
+            "title": "Airline Iata",
+            "type": "string"
+          },
+          "dep_iata": {
+            "default": "",
+            "description": "Optional departure airport IATA code filter (for example: JFK).",
+            "title": "Dep Iata",
+            "type": "string"
+          },
+          "arr_iata": {
+            "default": "",
+            "description": "Optional arrival airport IATA code filter (for example: LAX).",
+            "title": "Arr Iata",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight_date",
+          "number_of_flights"
+        ],
+        "title": "historical_flights_by_date_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "historical_flights_by_date_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "flight_arrival_departure_schedule",
+      "description": "Return current-day arrival or departure schedule samples for an airport, optionally filtered by airline name.",
+      "inputSchema": {
+        "properties": {
+          "airport_iata_code": {
+            "description": "Airport IATA code (for example: SFO).",
+            "minLength": 1,
+            "title": "Airport Iata Code",
+            "type": "string"
+          },
+          "schedule_type": {
+            "description": "Schedule type: arrival or departure.",
+            "title": "Schedule Type",
+            "type": "string"
+          },
+          "airline_name": {
+            "default": "",
+            "description": "Optional airline name filter.",
+            "title": "Airline Name",
+            "type": "string"
+          },
+          "number_of_flights": {
+            "default": 5,
+            "description": "Number of random flights to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Flights",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "airport_iata_code",
+          "schedule_type"
+        ],
+        "title": "flight_arrival_departure_schedule_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "flight_arrival_departure_schedule_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "future_flights_arrival_departure_schedule",
+      "description": "Return future arrival or departure schedule samples for an airport and date.",
+      "inputSchema": {
+        "properties": {
+          "airport_iata_code": {
+            "description": "Airport IATA code (for example: SFO).",
+            "minLength": 1,
+            "title": "Airport Iata Code",
+            "type": "string"
+          },
+          "schedule_type": {
+            "description": "Schedule type: arrival or departure.",
+            "title": "Schedule Type",
+            "type": "string"
+          },
+          "airline_iata": {
+            "default": "",
+            "description": "Optional airline IATA code filter (for example: UA).",
+            "title": "Airline Iata",
+            "type": "string"
+          },
+          "date": {
+            "default": "",
+            "description": "Future date in YYYY-MM-DD format.",
+            "examples": [
+              "2026-03-01"
+            ],
+            "title": "Date",
+            "type": "string"
+          },
+          "number_of_flights": {
+            "default": 5,
+            "description": "Number of random flights to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Flights",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "airport_iata_code",
+          "schedule_type"
+        ],
+        "title": "future_flights_arrival_departure_schedule_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "future_flights_arrival_departure_schedule_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "random_aircraft_type",
+      "description": "Return random aircraft type records.",
+      "inputSchema": {
+        "properties": {
+          "number_of_aircraft": {
+            "description": "Number of random aircraft types to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Aircraft",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number_of_aircraft"
+        ],
+        "title": "random_aircraft_type_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "random_aircraft_type_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "random_airplanes_detailed_info",
+      "description": "Return detailed metadata for random airplanes.",
+      "inputSchema": {
+        "properties": {
+          "number_of_airplanes": {
+            "description": "Number of random airplanes to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Airplanes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number_of_airplanes"
+        ],
+        "title": "random_airplanes_detailed_info_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "random_airplanes_detailed_info_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "random_countries_detailed_info",
+      "description": "Return detailed metadata for random countries.",
+      "inputSchema": {
+        "properties": {
+          "number_of_countries": {
+            "description": "Number of random countries to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Countries",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number_of_countries"
+        ],
+        "title": "random_countries_detailed_info_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "random_countries_detailed_info_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "random_cities_detailed_info",
+      "description": "Return detailed metadata for random cities.",
+      "inputSchema": {
+        "properties": {
+          "number_of_cities": {
+            "description": "Number of random cities to return.",
+            "exclusiveMinimum": 0,
+            "title": "Number Of Cities",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number_of_cities"
+        ],
+        "title": "random_cities_detailed_info_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "random_cities_detailed_info_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_airports",
+      "description": "List airports with pagination and optional search.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of airports to return.",
+            "exclusiveMinimum": 0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Offset for pagination.",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "search": {
+            "default": "",
+            "description": "Optional airport search text for autocomplete.",
+            "title": "Search",
+            "type": "string"
+          }
+        },
+        "title": "list_airports_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_airports_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_airlines",
+      "description": "List airlines with pagination and optional search.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of airlines to return.",
+            "exclusiveMinimum": 0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Offset for pagination.",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "search": {
+            "default": "",
+            "description": "Optional airline search text for autocomplete.",
+            "title": "Search",
+            "type": "string"
+          }
+        },
+        "title": "list_airlines_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_airlines_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_routes",
+      "description": "List routes with pagination and optional airline/departure/arrival filters.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of routes to return.",
+            "exclusiveMinimum": 0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Offset for pagination.",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "airline_iata": {
+            "default": "",
+            "description": "Optional airline IATA code filter.",
+            "title": "Airline Iata",
+            "type": "string"
+          },
+          "dep_iata": {
+            "default": "",
+            "description": "Optional departure airport IATA code filter.",
+            "title": "Dep Iata",
+            "type": "string"
+          },
+          "arr_iata": {
+            "default": "",
+            "description": "Optional arrival airport IATA code filter.",
+            "title": "Arr Iata",
+            "type": "string"
+          }
+        },
+        "title": "list_routes_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_routes_toolOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_taxes",
+      "description": "List aviation taxes with pagination and optional search.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of tax records to return.",
+            "exclusiveMinimum": 0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Offset for pagination.",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "search": {
+            "default": "",
+            "description": "Optional tax search text.",
+            "title": "Search",
+            "type": "string"
+          }
+        },
+        "title": "list_taxes_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_taxes_toolOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "resources": [
+    {
+      "name": "server_metadata",
+      "uri": "aviationstack://meta/server",
+      "description": "Static metadata about this Aviationstack MCP server.",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "aviationstack_endpoints",
+      "uri": "aviationstack://meta/endpoints",
+      "description": "Available Aviationstack API endpoints used by tools.",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "tool_input_examples",
+      "uriTemplate": "aviationstack://examples/tool-input/{tool_name}",
+      "description": "Example input payloads for each tool name."
+    }
+  ],
+  "prompts": [
+    {
+      "name": "plan_airline_flight_lookup",
+      "description": "Generate a concise plan for querying live flights for an airline.",
+      "arguments": [
+        {
+          "name": "airline_name",
+          "description": "Airline name to query live flights for.",
+          "required": true
+        },
+        {
+          "name": "number_of_flights",
+          "description": "Number of flights to request.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "plan_future_schedule_lookup",
+      "description": "Generate a plan for querying future arrival or departure schedules.",
+      "arguments": [
+        {
+          "name": "airport_iata_code",
+          "description": "Airport IATA code (for example: SFO).",
+          "required": true
+        },
+        {
+          "name": "date",
+          "description": "Future date in YYYY-MM-DD format.",
+          "required": true
+        },
+        {
+          "name": "schedule_type",
+          "description": "Schedule type: arrival or departure.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "plan_reference_data_lookup",
+      "description": "Generate a plan for exploring airport/airline/route/tax reference data.",
+      "arguments": [
+        {
+          "name": "data_type",
+          "description": "Reference data category: airports, airlines, routes, or taxes.",
+          "required": false
+        },
+        {
+          "name": "search",
+          "description": "Optional search term to narrow results.",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

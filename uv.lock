@@ -35,16 +35,18 @@ wheels = [
 
 [[package]]
 name = "aviationstack-mcp"
-version = "1.5.0"
+version = "1.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
     { name = "requests" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "requests" },
 ]
 
