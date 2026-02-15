@@ -31,22 +31,26 @@ MCP_INSTRUCTIONS = (
 )
 
 
-def _create_mcp_server() -> FastMCP:
+def create_mcp_server() -> FastMCP:
     """Create FastMCP with compatibility for versions lacking config_schema."""
     mcp_kwargs: dict[str, Any] = {
         "instructions": MCP_INSTRUCTIONS,
         "config_schema": CONFIG_SCHEMA,
     }
     try:
-        return FastMCP("Aviationstack MCP", **mcp_kwargs)
+        return FastMCP(  # pylint: disable=unexpected-keyword-arg
+            "Aviationstack MCP", **mcp_kwargs
+        )
     except TypeError as exc:
         if "config_schema" not in str(exc):
             raise
         mcp_kwargs.pop("config_schema", None)
-        return FastMCP("Aviationstack MCP", **mcp_kwargs)
+        return FastMCP(  # pylint: disable=unexpected-keyword-arg
+            "Aviationstack MCP", **mcp_kwargs
+        )
 
 
-mcp = _create_mcp_server()
+mcp = create_mcp_server()
 
 API_BASE_URL = "https://api.aviationstack.com/v1"
 

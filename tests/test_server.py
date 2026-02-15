@@ -146,7 +146,7 @@ class ServerToolTests(unittest.TestCase):
             return object()
 
         with patch("aviationstack_mcp.server.FastMCP", side_effect=fake_fastmcp):
-            result = server._create_mcp_server()
+            result = server.create_mcp_server()
 
         self.assertIsNotNone(result)
         self.assertEqual(len(call_kwargs), 2)
