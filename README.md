@@ -9,6 +9,10 @@ You can also find the Aviationstack MCP server in these well-known MCP server re
 - [glama](https://glama.ai/mcp/servers/@Pradumnasaraf/aviationstack-mcp)
 - [smithery](https://smithery.ai/server/pradumnasaraf/aviationstack-mcp) 
 
+<a href="https://glama.ai/mcp/servers/@Pradumnasaraf/aviationstack-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@Pradumnasaraf/aviationstack-mcp/badge" alt="Aviationstack Server MCP server" />
+</a>
+
 ### Demo
 
 https://github.com/user-attachments/assets/9325fcce-8ecc-4b01-8923-4ccb2f6968f4
