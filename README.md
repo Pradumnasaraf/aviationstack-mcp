@@ -7,7 +7,8 @@ You can also find the Aviationstack MCP server in these well-known MCP server re
 - [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file#-community-servers)
 - [punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers?tab=readme-ov-file#-travel--transportation)
 - [glama](https://glama.ai/mcp/servers/@Pradumnasaraf/aviationstack-mcp)
-- [smithery](https://smithery.ai/server/pradumnasaraf/aviationstack-mcp) 
+- [smithery](https://smithery.ai/server/pradumnasaraf/aviationstack-mcp)
+- [mcpservers.org](https://mcpservers.org/servers/pradumnasaraf/aviationstack-mcp)
 
 ### Demo
 
