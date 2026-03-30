@@ -106,3 +106,8 @@ To add this server to your favorite MCP client, you can add the following to you
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/pradumnasaraf-aviationstack-mcp).
+
