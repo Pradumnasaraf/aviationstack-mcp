@@ -102,6 +102,58 @@ To add this server to your favorite MCP client, you can add the following to you
   }
 }
 ```
+### MCP Server Configuration
+
+To add this server to your favorite MCP client, you can add the following to your MCP client configuration file.
+
+#### 1. Using `uvx` without cloning the repository (recommended)
+
+The following configuration pins `aviationstack-mcp` to version `1.6.0` and uses `mcp==1.28.1` for compatibility with the server's `FastMCP` import path.
+
+```json
+{
+  "mcpServers": {
+    "Aviationstack MCP": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "aviationstack-mcp==1.6.0",
+        "--with",
+        "mcp==1.28.1",
+        "aviationstack-mcp"
+      ],
+      "env": {
+        "AVIATION_STACK_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+
+> **Compatibility note:** If `uvx aviationstack-mcp` resolves an incompatible MCP SDK version in your environment, explicitly pinning `mcp==1.28.1` ensures compatibility with the server's `mcp.server.fastmcp` import.
+
+### Using with Python and `MultiServerMCPClient`
+
+For LangChain MCP clients using `MultiServerMCPClient`, the equivalent configuration is:
+
+```python
+"aviationstack": {
+    "transport": "stdio",
+    "command": "uvx",
+    "args": [
+        "--from",
+        "aviationstack-mcp==1.6.0",
+        "--with",
+        "mcp==1.28.1",
+        "aviationstack-mcp"
+    ],
+    "env": {
+        "AVIATION_STACK_API_KEY": AVIATION_STACK_API_KEY
+    }
+}
+```
+
+This configuration launches the AviationStack MCP server through `uvx` and keeps its MCP dependencies isolated from the application's Python environment.
 
 ## License
 
