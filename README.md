@@ -57,51 +57,6 @@ All endpoints are implemented as MCP tools and are ready to be used in an MCP-co
 - All MCP tools are defined as Python functions decorated with `@mcp.tool()`.
 - The server uses the `FastMCP` class from `mcp.server.fastmcp`.
 
-### MCP Server configuration
-
-To add this server to your favorite MCP client, you can add the following to your MCP client configuration file.
-
-1. Using `uvx` without cloning the repository (recommended)
-
-```json
-{
-  "mcpServers": {
-    "Aviationstack MCP": {
-      "command": "uvx",
-      "args": [
-        "aviationstack-mcp"
-      ],
-      "env": {
-        "AVIATION_STACK_API_KEY": "<your-api-key>"
-      }
-    }
-  }
-}
-```
-
-2. By cloning the repository and running the server locally
-
-```json
-{
-  "mcpServers": {
-    "Aviationstack MCP": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/aviationstack-mcp/src/aviationstack_mcp",
-        "run",
-        "-m",
-        "aviationstack_mcp",
-        "mcp",
-        "run"
-      ],
-      "env": {
-        "AVIATION_STACK_API_KEY": "<your-api-key>"
-      }
-    }
-  }
-}
-```
 ### MCP Server Configuration
 
 To add this server to your favorite MCP client, you can add the following to your MCP client configuration file.
@@ -154,6 +109,32 @@ For LangChain MCP clients using `MultiServerMCPClient`, the equivalent configura
 ```
 
 This configuration launches the AviationStack MCP server through `uvx` and keeps its MCP dependencies isolated from the application's Python environment.
+
+
+2. By cloning the repository and running the server locally
+
+```json
+{
+  "mcpServers": {
+    "Aviationstack MCP": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/aviationstack-mcp/src/aviationstack_mcp",
+        "run",
+        "-m",
+        "aviationstack_mcp",
+        "mcp",
+        "run"
+      ],
+      "env": {
+        "AVIATION_STACK_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+
 
 ## License
 
