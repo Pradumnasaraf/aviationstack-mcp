@@ -2,7 +2,7 @@
   "serverInfo": {
     "name": "aviationstack-mcp",
     "title": "Aviationstack MCP",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "description": "MCP server for Aviationstack flight, schedule, and aviation reference data.",
     "configSchema": {
       "type": "object",
