@@ -533,5 +533,320 @@ class MissingApiKeyTests(unittest.TestCase):
         os.environ["AVIATION_STACK_API_KEY"] = "test-key"
 
 
+class ToolWrapperTests(unittest.TestCase):
+    """Each registered tool wrapper validates input and delegates to its function."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+        server._ENDPOINT_TOTALS.clear()
+
+    def tearDown(self):
+        """Leave no cached totals behind for other tests."""
+        server._ENDPOINT_TOTALS.clear()
+
+    def test_every_wrapper_returns_the_shared_envelope(self):
+        """All 13 wrappers round-trip through validation and return valid JSON."""
+        calls = [
+            (server.get_flight_status_tool, {"flight_iata": "AA100"}),
+            (
+                server.flights_with_airline_tool,
+                {"airline_name": "Delta Air Lines", "number_of_flights": 1},
+            ),
+            (
+                server.historical_flights_by_date_tool,
+                {"flight_date": "2026-03-01", "number_of_flights": 1},
+            ),
+            (
+                server.flight_arrival_departure_schedule_tool,
+                {"airport_iata_code": "SFO", "schedule_type": "departure"},
+            ),
+            (
+                server.future_flights_arrival_departure_schedule_tool,
+                {
+                    "airport_iata_code": "SFO",
+                    "schedule_type": "arrival",
+                    "date": "2026-03-01",
+                },
+            ),
+            (server.random_aircraft_type_tool, {"number_of_aircraft": 1}),
+            (server.random_airplanes_detailed_info_tool, {"number_of_airplanes": 1}),
+            (server.random_countries_detailed_info_tool, {"number_of_countries": 1}),
+            (server.random_cities_detailed_info_tool, {"number_of_cities": 1}),
+            (server.list_airports_tool, {"limit": 1}),
+            (server.list_airlines_tool, {"limit": 1}),
+            (server.list_routes_tool, {"limit": 1}),
+            (server.list_taxes_tool, {"limit": 1}),
+        ]
+        self.assertEqual(len(calls), 13)
+
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse({"data": [], "pagination": {"total": 10}}),
+        ):
+            for wrapper, kwargs in calls:
+                with self.subTest(tool=wrapper.__name__):
+                    parsed = json.loads(wrapper(**kwargs))
+                    self.assertTrue(parsed["ok"], parsed)
+                    self.assertEqual(parsed["count"], 0)
+
+    def test_wrapper_rejects_out_of_range_limit(self):
+        """Pydantic validation on the wrapper rejects a limit above MAX_LIMIT."""
+        with self.assertRaises(Exception):
+            server.list_airports_tool(limit=server.MAX_LIMIT + 1)
+
+
+class PromptTests(unittest.TestCase):
+    """Prompts name the tool they are steering the model toward."""
+
+    def test_flight_status_prompt_names_its_tool(self):
+        """The single-flight prompt points at get_flight_status."""
+        text = server.plan_flight_status_lookup(flight_iata="AA100")
+        self.assertIn("get_flight_status", text)
+        self.assertIn("AA100", text)
+        self.assertIn("codeshare", text)
+
+    def test_airline_prompt_names_its_tool(self):
+        """The airline prompt points at flights_with_airline."""
+        text = server.plan_airline_flight_lookup(airline_name="Delta Air Lines")
+        self.assertIn("flights_with_airline", text)
+
+    def test_future_schedule_prompt_names_its_tool(self):
+        """The future schedule prompt points at its tool."""
+        text = server.plan_future_schedule_lookup(
+            airport_iata_code="SFO", date="2026-03-01"
+        )
+        self.assertIn("future_flights_arrival_departure_schedule", text)
+
+    def test_reference_prompt_maps_each_category(self):
+        """Each reference category resolves to its matching list tool."""
+        for category, tool in [
+            ("airports", "list_airports"),
+            ("airlines", "list_airlines"),
+            ("routes", "list_routes"),
+            ("taxes", "list_taxes"),
+        ]:
+            with self.subTest(category=category):
+                self.assertIn(tool, server.plan_reference_data_lookup(data_type=category))
+
+    def test_reference_prompt_falls_back_for_unknown_category(self):
+        """An unrecognised category falls back to airports rather than failing."""
+        self.assertIn("list_airports", server.plan_reference_data_lookup(data_type="moons"))
+
+
+class ResourceTests(unittest.TestCase):
+    """Resources expose accurate, parseable metadata."""
+
+    def test_server_metadata_lists_the_key_fallbacks(self):
+        """The metadata resource documents every accepted key variable."""
+        meta = json.loads(server.server_metadata_resource())
+        self.assertEqual(meta["api_base_url"], server.API_BASE_URL)
+        self.assertIn("AVIATION_STACK_API_KEY", meta["auth_env_fallbacks"])
+
+    def test_endpoints_resource_covers_every_endpoint_the_tools_call(self):
+        """The endpoints resource stays in step with the endpoints in use."""
+        endpoints = json.loads(server.aviationstack_endpoints_resource())
+        listed = {value.lstrip("/") for value in endpoints.values()}
+        for endpoint in (
+            "flights",
+            "timetable",
+            "flightsFuture",
+            "aircraft_types",
+            "airplanes",
+            "countries",
+            "cities",
+            "airports",
+            "airlines",
+            "routes",
+            "taxes",
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertIn(endpoint, listed)
+
+    def test_tool_input_examples_cover_documented_tools(self):
+        """Example payloads parse and include the newest tool."""
+        example = json.loads(server.tool_input_examples_resource("get_flight_status"))
+        self.assertEqual(example["flight_iata"], "AA100")
+
+    def test_tool_input_examples_reports_unknown_tool(self):
+        """An unknown tool name returns an explicit error rather than an empty object."""
+        example = json.loads(server.tool_input_examples_resource("nope"))
+        self.assertIn("nope", example["error"])
+
+
+class NetworkFailureTests(unittest.TestCase):
+    """Every tool converts a transport failure into the shared error envelope."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+        server._ENDPOINT_TOTALS.clear()
+
+    def tearDown(self):
+        """Leave no cached totals behind for other tests."""
+        server._ENDPOINT_TOTALS.clear()
+
+    def test_every_tool_handles_a_transport_error(self):
+        """A RequestException never escapes as an exception to the caller."""
+        calls = [
+            ("fetching flight status", lambda: server.get_flight_status("AA100")),
+            ("fetching flights", lambda: server.flights_with_airline("Delta", 1)),
+            (
+                "fetching historical flights",
+                lambda: server.historical_flights_by_date("2026-03-01", 1),
+            ),
+            (
+                "fetching flight schedule",
+                lambda: server.flight_arrival_departure_schedule("SFO", "departure", "", 1),
+            ),
+            (
+                "fetching flight future schedule",
+                lambda: server.future_flights_arrival_departure_schedule(
+                    "SFO", "arrival", "", "2026-03-01", 1
+                ),
+            ),
+            ("fetching aircraft type", lambda: server.random_aircraft_type(1)),
+            ("fetching airplanes", lambda: server.random_airplanes_detailed_info(1)),
+            ("fetching countries", lambda: server.random_countries_detailed_info(1)),
+            ("fetching cities", lambda: server.random_cities_detailed_info(1)),
+            ("fetching airports", lambda: server.list_airports(1)),
+            ("fetching airlines", lambda: server.list_airlines(1)),
+            ("fetching routes", lambda: server.list_routes(1)),
+            ("fetching taxes", lambda: server.list_taxes(1)),
+        ]
+        self.assertEqual(len(calls), 13)
+
+        def boom(url, params=None, timeout=None):
+            del url, params, timeout
+            raise server.requests.exceptions.ConnectionError("connection refused")
+
+        with patch("aviationstack_mcp.server.requests.get", boom):
+            for context, call in calls:
+                with self.subTest(context=context):
+                    parsed = json.loads(call())
+                    self.assertFalse(parsed["ok"])
+                    self.assertEqual(parsed["context"], context)
+
+    def test_every_tool_handles_a_malformed_record(self):
+        """A record of the wrong shape becomes an error envelope, not a traceback."""
+        calls = [
+            lambda: server.get_flight_status("AA100"),
+            lambda: server.flights_with_airline("Delta", 1),
+            lambda: server.random_countries_detailed_info(1),
+            lambda: server.list_airports(1),
+        ]
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse({"data": ["not-a-record"]}),
+        ):
+            for call in calls:
+                parsed = json.loads(call())
+                self.assertFalse(parsed["ok"])
+
+    def test_non_json_body_falls_back_to_status_check(self):
+        """A body that is not JSON defers to raise_for_status."""
+
+        class BadBody:
+            """Response stub whose body cannot be decoded."""
+
+            def json(self):
+                """Raise the way requests does on a non-JSON body."""
+                raise ValueError("no json")
+
+            def raise_for_status(self):
+                """Report the underlying HTTP failure."""
+                raise server.requests.HTTPError("502 Bad Gateway")
+
+        with patch("aviationstack_mcp.server.requests.get", return_value=BadBody()):
+            parsed = json.loads(server.list_taxes(1))
+        self.assertFalse(parsed["ok"])
+        self.assertIn("502", parsed["error"])
+
+
+class OptionalFilterTests(unittest.TestCase):
+    """Optional filters are only sent when the caller supplies them."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+
+    def test_blank_flight_iata_is_rejected(self):
+        """Whitespace is not a flight number."""
+        parsed = json.loads(server.get_flight_status("   "))
+        self.assertFalse(parsed["ok"])
+        self.assertIn("must not be empty", parsed["error"])
+
+    def test_flight_date_is_forwarded_when_given(self):
+        """Supplying a date narrows the lookup to that day."""
+        recorder = RecordingGet(flight_payload())
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.get_flight_status("AA100", flight_date="2026-03-01")
+        self.assertEqual(recorder.last_params()["flight_date"], "2026-03-01")
+
+    def test_historical_filters_are_forwarded(self):
+        """Airline and route filters reach the API when set."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.historical_flights_by_date(
+                "2026-03-01", 1, airline_iata="DL", dep_iata="JFK", arr_iata="LAX"
+            )
+        params = recorder.last_params()
+        self.assertEqual(params["airline_iata"], "DL")
+        self.assertEqual(params["dep_iata"], "JFK")
+        self.assertEqual(params["arr_iata"], "LAX")
+
+    def test_route_filters_are_forwarded(self):
+        """Route filters reach the API when set."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.list_routes(1, 0, "DL", "JFK", "LAX")
+        params = recorder.last_params()
+        self.assertEqual(params["dep_iata"], "JFK")
+        self.assertEqual(params["arr_iata"], "LAX")
+
+    def test_airline_name_filter_is_forwarded_to_timetable(self):
+        """The schedule tool forwards an airline name filter."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.flight_arrival_departure_schedule("SFO", "departure", "Delta", 1)
+        self.assertEqual(recorder.last_params()["airline_name"], "Delta")
+
+    def test_omitted_filters_are_not_sent(self):
+        """Blank optional filters are left out of the request entirely."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.list_routes(1)
+        for absent in ("airline_iata", "dep_iata", "arr_iata"):
+            self.assertNotIn(absent, recorder.last_params())
+
+
+class ValidationHelperTests(unittest.TestCase):
+    """The shared validators reject bad values with actionable messages."""
+
+    def test_positive_int_rejects_zero(self):
+        """Zero is not a positive count."""
+        with self.assertRaises(ValueError):
+            server._validate_positive_int(0, "count")
+
+    def test_non_negative_int_rejects_negative(self):
+        """Offsets cannot be negative."""
+        with self.assertRaises(ValueError):
+            server._validate_non_negative_int(-1, "offset")
+
+    def test_iso_date_rejects_impossible_day(self):
+        """A calendar-invalid date is refused."""
+        with self.assertRaises(ValueError):
+            server._validate_iso_date("2026-02-31", "flight_date")
+
+    def test_invalid_schedule_type_message_names_both_options(self):
+        """The schedule type error tells the caller what is allowed."""
+        parsed = json.loads(
+            server.future_flights_arrival_departure_schedule(
+                "SFO", "sideways", "", "2026-03-01", 1
+            )
+        )
+        self.assertIn("departure", parsed["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

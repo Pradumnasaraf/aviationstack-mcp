@@ -28,7 +28,9 @@ CONFIG_SCHEMA = {
 
 MCP_INSTRUCTIONS = (
     "Use these tools to fetch real-time, historical, and reference aviation data from "
-    "Aviationstack. Provide IATA/ICAO codes when available and request small limits first."
+    "Aviationstack. To look up one specific flight, use `get_flight_status` with its IATA "
+    "number. Provide IATA/ICAO codes when available and request small limits first. Every "
+    "tool returns {'ok': true, 'count': N, 'data': [...]} or {'ok': false, 'error': '...'}."
 )
 
 
@@ -67,6 +69,14 @@ FLIGHT_STATUS_CHOICES = (
 )
 
 FLIGHT_STATUS_TEXT = ", ".join(FLIGHT_STATUS_CHOICES)
+
+TOOL_ERRORS = (
+    requests.RequestException,
+    AttributeError,
+    KeyError,
+    TypeError,
+    ValueError,
+)
 
 _ENDPOINT_TOTALS: dict[str, int] = {}
 
@@ -537,9 +547,7 @@ def flights_with_airline(
             filtered_flights,
             message="" if filtered_flights else f"No flights found for airline '{airline_name}'.",
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching flights", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flights", exc)
 
 
@@ -586,9 +594,7 @@ def get_flight_status(flight_iata: str, flight_date: str = "") -> str:
             flights,
             message="" if flights else f"No flight found for '{flight_iata}'.",
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching flight status", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flight status", exc)
 
 
@@ -635,9 +641,7 @@ def historical_flights_by_date(
                 else f"No historical flights found for date '{flight_date}'."
             ),
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching historical flights", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching historical flights", exc)
 
 
@@ -695,9 +699,7 @@ def flight_arrival_departure_schedule(
                 else f"No flights found for iata code '{airport_iata_code}'."
             ),
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching flight schedule", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flight schedule", exc)
 
 
@@ -751,9 +753,7 @@ def future_flights_arrival_departure_schedule(
                 else f"No flights found for iata code '{airport_iata_code}'."
             ),
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching flight future schedule", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flight future schedule", exc)
 
 
@@ -771,9 +771,7 @@ def random_aircraft_type(number_of_aircraft: int) -> str:
                 }
             )
         return _success_response(aircraft_types)
-    except requests.RequestException as exc:
-        return _error_response("fetching aircraft type", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching aircraft type", exc)
 
 
@@ -800,9 +798,7 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
                 }
             )
         return _success_response(airplanes)
-    except requests.RequestException as exc:
-        return _error_response("fetching airplanes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airplanes", exc)
 
 
@@ -830,9 +826,7 @@ def random_countries_detailed_info(number_of_countries: int) -> str:
                 }
             )
         return _success_response(countries)
-    except requests.RequestException as exc:
-        return _error_response("fetching countries", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching countries", exc)
 
 
@@ -857,9 +851,7 @@ def random_cities_detailed_info(number_of_cities: int) -> str:
                 }
             )
         return _success_response(cities)
-    except requests.RequestException as exc:
-        return _error_response("fetching cities", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching cities", exc)
 
 
@@ -886,9 +878,7 @@ def list_airports(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "gmt": airport.get("gmt"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching airports", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airports", exc)
 
 
@@ -914,9 +904,7 @@ def list_airlines(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "country_iso2": airline.get("country_iso2"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching airlines", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airlines", exc)
 
 
@@ -952,9 +940,7 @@ def list_routes(
                 "arr_icao": route.get("arr_icao"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching routes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching routes", exc)
 
 
@@ -976,9 +962,7 @@ def list_taxes(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "iata_code": tax.get("iata_code"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching taxes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching taxes", exc)
 
 
@@ -1313,6 +1297,26 @@ def list_taxes_tool(
         limit=validated_input.limit,
         offset=validated_input.offset,
         search=validated_input.search,
+    )
+
+
+@mcp.prompt(
+    name="plan_flight_status_lookup",
+    description="Generate a plan for checking the status of one specific flight.",
+)
+def plan_flight_status_lookup(
+    flight_iata: Annotated[str, Field(description="Flight IATA number (for example: AA100).")],
+    flight_date: Annotated[
+        str,
+        Field(description="Optional date in YYYY-MM-DD format.", examples=["2026-03-01"]),
+    ] = "",
+) -> str:
+    """Prompt for guiding a single-flight status lookup."""
+    return (
+        f"Use the `get_flight_status` tool with flight_iata='{flight_iata}' and "
+        f"flight_date='{flight_date}'. The first record is the operating carrier and any "
+        "records after it are codeshares of the same flight, so report the first record "
+        "and mention the codeshares only if asked."
     )
 
 

@@ -55,11 +55,58 @@ Every tool returns the same JSON envelope. On success: `{"ok": true, "count": N,
 | `list_routes(limit: int = 10, offset: int = 0, airline_iata: str = "", dep_iata: str = "", arr_iata: str = "")` | List routes. | - **`limit`**: Number of results to return<br> - **`offset`**: Pagination offset<br> - **`airline_iata`**: Optional airline IATA filter<br> - **`dep_iata`**: Optional departure airport IATA filter<br> - **`arr_iata`**: Optional arrival airport IATA filter |
 | `list_taxes(limit: int = 10, offset: int = 0, search: str = "")` | List aviation taxes. | - **`limit`**: Number of results to return<br> - **`offset`**: Pagination offset<br> - **`search`**: Optional search query |
 
+### Prompts
+
+The server ships reusable prompts that steer a model toward the right tool.
+
+| Prompt | Arguments | Purpose |
+|--------|-----------|---------|
+| `plan_flight_status_lookup` | `flight_iata`, `flight_date` | Check one specific flight, and explain its codeshares. |
+| `plan_airline_flight_lookup` | `airline_name`, `number_of_flights` | Query live flights for an airline. |
+| `plan_future_schedule_lookup` | `airport_iata_code`, `date`, `schedule_type` | Query a future airport schedule. |
+| `plan_reference_data_lookup` | `data_type`, `search` | Explore airport, airline, route or tax reference data. |
+
+### Resources
+
+| Resource | URI | Contents |
+|----------|-----|----------|
+| `server_metadata` | `aviationstack://meta/server` | API base URL and the accepted API key variables. |
+| `aviationstack_endpoints` | `aviationstack://meta/endpoints` | The Aviationstack endpoints each tool calls. |
+| `tool_input_examples` | `aviationstack://examples/tool-input/{tool_name}` | A sample payload for a given tool. |
+
 ### Development
 
-- The main server logic is in `server.py`.
+- The main server logic is in `src/aviationstack_mcp/server.py`.
 - All MCP tools are defined as Python functions decorated with `@mcp.tool()`.
-- The server uses the `FastMCP` class from `mcp.server.fastmcp`.
+- Each tool is a thin wrapper that validates input with a Pydantic model, then calls the
+  matching plain function. Tests target the plain functions.
+- The server uses the `FastMCP` class from `mcp.server.fastmcp`. The `mcp` dependency is
+  pinned to `<2`, because 2.x renames `FastMCP` to `MCPServer`.
+- Tools never raise. Every failure is caught and returned as the error envelope.
+
+Set up and run the checks the CI runs:
+
+```bash
+uv sync --all-groups
+
+# Unit tests
+uv run python -m unittest discover -s tests -v
+
+# Lint, must stay at 10.00/10
+uv run pylint $(git ls-files '*.py')
+
+# Coverage
+uv run coverage run -m unittest discover -s tests
+uv run coverage report --include="src/*"
+```
+
+`.well-known/mcp/server-card.json` is generated, not hand-edited. After changing any tool,
+prompt or resource, regenerate it or CI will fail:
+
+```bash
+uv run python scripts/generate_server_card.py          # rewrite the card
+uv run python scripts/generate_server_card.py --check  # what CI runs
+```
 
 ### MCP Server configuration
 
