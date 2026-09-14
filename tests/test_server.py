@@ -427,6 +427,15 @@ class ReferenceListingTests(unittest.TestCase):
         """Set a deterministic API key for tests."""
         os.environ["AVIATION_STACK_API_KEY"] = "test-key"
 
+    def test_country_name_uses_the_field_the_api_returns(self):
+        """The countries endpoint returns country_name, not name."""
+        payload = {"data": [{"country_name": "Andorra", "capital": "Andorra la Vella"}]}
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.random_countries_detailed_info(1))
+        self.assertEqual(parsed["data"][0]["country_name"], "Andorra")
+
     def test_list_airlines_maps_records(self):
         """Airline records are reduced to the documented fields."""
         payload = {"data": [{"airline_name": "Delta Air Lines", "iata_code": "DL"}]}

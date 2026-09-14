@@ -815,7 +815,7 @@ def random_countries_detailed_info(number_of_countries: int) -> str:
         for country in _fetch_random_page("countries", number_of_countries):
             countries.append(
                 {
-                    "country_name": country.get("name"),
+                    "country_name": country.get("country_name"),
                     "capital": country.get("capital"),
                     "currency_code": country.get("currency_code"),
                     "fips_code": country.get("fips_code"),
