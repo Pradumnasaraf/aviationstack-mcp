@@ -96,8 +96,8 @@ uv run python -m unittest discover -s tests -v
 uv run pylint $(git ls-files '*.py')
 
 # Coverage
-uv run coverage run -m unittest discover -s tests
-uv run coverage report --include="src/*"
+uv run coverage run --source=aviationstack_mcp -m unittest discover -s tests
+uv run coverage report
 ```
 
 `.well-known/mcp/server-card.json` is generated, not hand-edited. After changing any tool,
