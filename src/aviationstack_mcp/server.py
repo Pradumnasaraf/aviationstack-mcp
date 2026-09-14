@@ -4,6 +4,7 @@
 import json
 import os
 import random
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any
@@ -27,7 +28,9 @@ CONFIG_SCHEMA = {
 
 MCP_INSTRUCTIONS = (
     "Use these tools to fetch real-time, historical, and reference aviation data from "
-    "Aviationstack. Provide IATA/ICAO codes when available and request small limits first."
+    "Aviationstack. To look up one specific flight, use `get_flight_status` with its IATA "
+    "number. Provide IATA/ICAO codes when available and request small limits first. Every "
+    "tool returns {'ok': true, 'count': N, 'data': [...]} or {'ok': false, 'error': '...'}."
 )
 
 
@@ -54,6 +57,29 @@ mcp = create_mcp_server()
 
 API_BASE_URL = "https://api.aviationstack.com/v1"
 
+MAX_LIMIT = 100
+
+FLIGHT_STATUS_CHOICES = (
+    "scheduled",
+    "active",
+    "landed",
+    "cancelled",
+    "incident",
+    "diverted",
+)
+
+FLIGHT_STATUS_TEXT = ", ".join(FLIGHT_STATUS_CHOICES)
+
+TOOL_ERRORS = (
+    requests.RequestException,
+    AttributeError,
+    KeyError,
+    TypeError,
+    ValueError,
+)
+
+_ENDPOINT_TOTALS: dict[str, int] = {}
+
 
 class FlightsWithAirlineInput(BaseModel):
     """Input schema for flights_with_airline tool."""
@@ -67,8 +93,30 @@ class FlightsWithAirlineInput(BaseModel):
     )
     number_of_flights: int = Field(
         ...,
-        description="Number of random flights to return.",
+        description="Number of flights to return.",
         gt=0,
+        le=MAX_LIMIT,
+    )
+    flight_status: str = Field(
+        default="",
+        description=f"Optional flight status filter. One of: {FLIGHT_STATUS_TEXT}.",
+    )
+
+
+class GetFlightStatusInput(BaseModel):
+    """Input schema for get_flight_status tool."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    flight_iata: str = Field(
+        ...,
+        description="Flight IATA number (for example: AA100).",
+        min_length=2,
+    )
+    flight_date: str = Field(
+        default="",
+        description="Optional date in YYYY-MM-DD format. Defaults to the current day.",
+        examples=["2026-03-01"],
     )
 
 
@@ -84,8 +132,9 @@ class HistoricalFlightsByDateInput(BaseModel):
     )
     number_of_flights: int = Field(
         ...,
-        description="Number of random flights to return.",
+        description="Number of flights to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
     airline_iata: str = Field(
         default="",
@@ -122,8 +171,9 @@ class FlightArrivalDepartureScheduleInput(BaseModel):
     )
     number_of_flights: int = Field(
         ...,
-        description="Number of random flights to return.",
+        description="Number of flights to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -153,8 +203,9 @@ class FutureFlightsArrivalDepartureScheduleInput(BaseModel):
     )
     number_of_flights: int = Field(
         ...,
-        description="Number of random flights to return.",
+        description="Number of flights to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -167,6 +218,7 @@ class RandomAircraftTypeInput(BaseModel):
         ...,
         description="Number of random aircraft types to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -179,6 +231,7 @@ class RandomAirplanesDetailedInfoInput(BaseModel):
         ...,
         description="Number of random airplanes to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -191,6 +244,7 @@ class RandomCountriesDetailedInfoInput(BaseModel):
         ...,
         description="Number of random countries to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -203,6 +257,7 @@ class RandomCitiesDetailedInfoInput(BaseModel):
         ...,
         description="Number of random cities to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
 
 
@@ -215,6 +270,7 @@ class ListAirportsInput(BaseModel):
         default=10,
         description="Maximum number of airports to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
     offset: int = Field(
         default=0,
@@ -236,6 +292,7 @@ class ListAirlinesInput(BaseModel):
         default=10,
         description="Maximum number of airlines to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
     offset: int = Field(
         default=0,
@@ -257,6 +314,7 @@ class ListRoutesInput(BaseModel):
         default=10,
         description="Maximum number of routes to return.",
         gt=0,
+        le=MAX_LIMIT,
     )
     offset: int = Field(
         default=0,
@@ -318,6 +376,21 @@ def _validate_non_negative_int(value: int, param_name: str) -> None:
         raise ValueError(f"'{param_name}' must be 0 or greater.")
 
 
+def _validate_limit(value: int, param_name: str = "limit") -> None:
+    """Validate a record limit stays within the range the API is billed for."""
+    _validate_positive_int(value, param_name)
+    if value > MAX_LIMIT:
+        raise ValueError(f"'{param_name}' must be {MAX_LIMIT} or less.")
+
+
+def _validate_flight_status(status: str) -> str:
+    """Normalise a flight status filter and reject values the API does not accept."""
+    normalized = status.lower()
+    if normalized not in FLIGHT_STATUS_CHOICES:
+        raise ValueError(f"'flight_status' must be one of: {FLIGHT_STATUS_TEXT}.")
+    return normalized
+
+
 def _validate_iso_date(date_value: str, param_name: str) -> None:
     """Validate strict YYYY-MM-DD date format."""
     try:
@@ -328,14 +401,70 @@ def _validate_iso_date(date_value: str, param_name: str) -> None:
         raise ValueError(f"'{param_name}' must be in YYYY-MM-DD format.")
 
 
+def _scrub_secrets(text: str) -> str:
+    """Redact the API key from text, since requests puts the request URL in errors."""
+    scrubbed = re.sub(r"(access_key=)[^&\s]+", r"\1***", text)
+    api_key = (
+        os.getenv("AVIATION_STACK_API_KEY")
+        or os.getenv("AVIATIONSTACK_API_KEY")
+        or os.getenv("aviationstack_api_key")
+    )
+    if api_key:
+        scrubbed = scrubbed.replace(api_key, "***")
+    return scrubbed
+
+
 def _error_response(context: str, exc: Exception) -> str:
-    return json.dumps({"ok": False, "context": context, "error": str(exc)})
+    return json.dumps(
+        {"ok": False, "context": context, "error": _scrub_secrets(str(exc))}
+    )
 
 
-def _sample_data(items: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+def _success_response(
+    data: list[dict[str, Any]],
+    pagination: dict[str, Any] | None = None,
+    message: str = "",
+) -> str:
+    """Build the single success envelope every tool returns."""
+    payload: dict[str, Any] = {"ok": True, "count": len(data), "data": data}
+    if pagination:
+        payload["pagination"] = {
+            "limit": pagination.get("limit"),
+            "offset": pagination.get("offset"),
+            "total": pagination.get("total"),
+        }
+    if message:
+        payload["message"] = message
+    return json.dumps(payload)
+
+
+def _operating_flight_first(
+    flights: list[dict[str, Any]], flight_iata: str
+) -> list[dict[str, Any]]:
+    """Order the requested flight ahead of the codeshares the API returns with it."""
+    return sorted(
+        flights,
+        key=lambda flight: _safe_get(flight, "flight", "iata") != flight_iata,
+    )
+
+
+def _take(items: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+    """Return at most `count` records, preserving the order the API sent them in."""
     _validate_positive_int(count, "count")
-    number_to_fetch = min(count, len(items))
-    return random.sample(items, number_to_fetch)
+    return items[:count]
+
+
+def _fetch_random_page(endpoint: str, count: int) -> list[dict[str, Any]]:
+    """Fetch `count` records from a random offset, using the total cached from earlier calls."""
+    total = _ENDPOINT_TOTALS.get(endpoint, 0)
+    max_offset = max(total - count, 0)
+    offset = random.randint(0, max_offset) if max_offset else 0
+
+    data = fetch_flight_data(endpoint, {"limit": count, "offset": offset})
+    reported_total = _safe_get(data, "pagination", "total")
+    if isinstance(reported_total, int) and reported_total > 0:
+        _ENDPOINT_TOTALS[endpoint] = reported_total
+    return data.get("data", [])
 
 
 def _get_api_key() -> str:
@@ -379,20 +508,26 @@ def _list_reference_data(
     mapper: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> str:
     data = fetch_flight_data(endpoint, params)
-    return json.dumps([mapper(item) for item in data.get("data", [])])
+    records = [mapper(item) for item in data.get("data", [])]
+    return _success_response(records, pagination=data.get("pagination"))
 
 
-def flights_with_airline(airline_name: str, number_of_flights: int) -> str:
-    """Get a random sample of real-time flights for an airline."""
+def flights_with_airline(
+    airline_name: str, number_of_flights: int, flight_status: str = ""
+) -> str:
+    """Get real-time flights for an airline, optionally filtered by flight status."""
     try:
-        _validate_positive_int(number_of_flights, "number_of_flights")
-        data = fetch_flight_data(
-            "flights", {"airline_name": airline_name, "limit": number_of_flights}
-        )
-        sampled_flights = _sample_data(data.get("data", []), number_of_flights)
+        _validate_limit(number_of_flights, "number_of_flights")
+        params: dict[str, Any] = {
+            "airline_name": airline_name,
+            "limit": number_of_flights,
+        }
+        if flight_status:
+            params["flight_status"] = _validate_flight_status(flight_status)
+        data = fetch_flight_data("flights", params)
 
         filtered_flights = []
-        for flight in sampled_flights:
+        for flight in _take(data.get("data", []), number_of_flights):
             filtered_flights.append(
                 {
                     "flight_number": _safe_get(flight, "flight", "iata"),
@@ -408,13 +543,59 @@ def flights_with_airline(airline_name: str, number_of_flights: int) -> str:
                     "departure_gate": _safe_get(flight, "departure", "gate"),
                 }
             )
-        if not filtered_flights:
-            return f"No flights found for airline '{airline_name}'."
-        return json.dumps(filtered_flights)
-    except requests.RequestException as exc:
+        return _success_response(
+            filtered_flights,
+            message="" if filtered_flights else f"No flights found for airline '{airline_name}'.",
+        )
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flights", exc)
-    except (KeyError, ValueError, TypeError) as exc:
-        return _error_response("fetching flights", exc)
+
+
+def get_flight_status(flight_iata: str, flight_date: str = "") -> str:
+    """Look up a single flight by its IATA number, for today or a given date."""
+    try:
+        if not flight_iata.strip():
+            raise ValueError("'flight_iata' must not be empty.")
+        params: dict[str, Any] = {"flight_iata": flight_iata.strip().upper()}
+        if flight_date:
+            _validate_iso_date(flight_date, "flight_date")
+            params["flight_date"] = flight_date
+
+        data = fetch_flight_data("flights", params)
+
+        flights = []
+        for flight in _operating_flight_first(data.get("data", []), params["flight_iata"]):
+            flights.append(
+                {
+                    "flight_date": flight.get("flight_date"),
+                    "flight_status": flight.get("flight_status"),
+                    "flight_number": _safe_get(flight, "flight", "iata"),
+                    "airline": _safe_get(flight, "airline", "name"),
+                    "departure_airport": _safe_get(flight, "departure", "airport"),
+                    "departure_iata": _safe_get(flight, "departure", "iata"),
+                    "departure_scheduled": _safe_get(flight, "departure", "scheduled"),
+                    "departure_estimated": _safe_get(flight, "departure", "estimated"),
+                    "departure_actual": _safe_get(flight, "departure", "actual"),
+                    "departure_terminal": _safe_get(flight, "departure", "terminal"),
+                    "departure_gate": _safe_get(flight, "departure", "gate"),
+                    "departure_delay": _safe_get(flight, "departure", "delay"),
+                    "arrival_airport": _safe_get(flight, "arrival", "airport"),
+                    "arrival_iata": _safe_get(flight, "arrival", "iata"),
+                    "arrival_scheduled": _safe_get(flight, "arrival", "scheduled"),
+                    "arrival_estimated": _safe_get(flight, "arrival", "estimated"),
+                    "arrival_actual": _safe_get(flight, "arrival", "actual"),
+                    "arrival_terminal": _safe_get(flight, "arrival", "terminal"),
+                    "arrival_gate": _safe_get(flight, "arrival", "gate"),
+                    "arrival_baggage": _safe_get(flight, "arrival", "baggage"),
+                    "arrival_delay": _safe_get(flight, "arrival", "delay"),
+                }
+            )
+        return _success_response(
+            flights,
+            message="" if flights else f"No flight found for '{flight_iata}'.",
+        )
+    except TOOL_ERRORS as exc:
+        return _error_response("fetching flight status", exc)
 
 
 def historical_flights_by_date(
@@ -424,9 +605,9 @@ def historical_flights_by_date(
     dep_iata: str = "",
     arr_iata: str = "",
 ) -> str:
-    """Get a random sample of historical flights for a specific date (Basic plan+)."""
+    """Get historical flights for a specific date (Basic plan+)."""
     try:
-        _validate_positive_int(number_of_flights, "number_of_flights")
+        _validate_limit(number_of_flights, "number_of_flights")
         _validate_iso_date(flight_date, "flight_date")
         params: dict[str, Any] = {"flight_date": flight_date, "limit": number_of_flights}
         if airline_iata:
@@ -437,10 +618,9 @@ def historical_flights_by_date(
             params["arr_iata"] = arr_iata
 
         data = fetch_flight_data("flights", params)
-        sampled_flights = _sample_data(data.get("data", []), number_of_flights)
 
         historical_flights = []
-        for flight in sampled_flights:
+        for flight in _take(data.get("data", []), number_of_flights):
             historical_flights.append(
                 {
                     "flight_date": flight.get("flight_date"),
@@ -453,12 +633,15 @@ def historical_flights_by_date(
                     "arrival_time": _safe_get(flight, "arrival", "scheduled"),
                 }
             )
-        if not historical_flights:
-            return f"No historical flights found for date '{flight_date}'."
-        return json.dumps(historical_flights)
-    except requests.RequestException as exc:
-        return _error_response("fetching historical flights", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(
+            historical_flights,
+            message=(
+                ""
+                if historical_flights
+                else f"No historical flights found for date '{flight_date}'."
+            ),
+        )
+    except TOOL_ERRORS as exc:
         return _error_response("fetching historical flights", exc)
 
 
@@ -468,22 +651,25 @@ def flight_arrival_departure_schedule(
     airline_name: str,
     number_of_flights: int,
 ) -> str:
-    """Get a random sample of current-day arrival/departure schedules for an airport."""
+    """Get the current-day arrival or departure schedule for an airport."""
     try:
-        _validate_positive_int(number_of_flights, "number_of_flights")
+        _validate_limit(number_of_flights, "number_of_flights")
         normalized_schedule_type = schedule_type.lower()
         if normalized_schedule_type not in {"arrival", "departure"}:
             raise ValueError("'schedule_type' must be either 'arrival' or 'departure'.")
 
-        params: dict[str, Any] = {"iataCode": airport_iata_code, "type": normalized_schedule_type}
+        params: dict[str, Any] = {
+            "iataCode": airport_iata_code,
+            "type": normalized_schedule_type,
+            "limit": number_of_flights,
+        }
         if airline_name:
             params["airline_name"] = airline_name
 
         data = fetch_flight_data("timetable", params)
-        sampled_flights = _sample_data(data.get("data", []), number_of_flights)
 
         filtered_flights = []
-        for flight in sampled_flights:
+        for flight in _take(data.get("data", []), number_of_flights):
             filtered_flights.append(
                 {
                     "airline": _safe_get(flight, "airline", "name"),
@@ -505,12 +691,15 @@ def flight_arrival_departure_schedule(
                     "departure_delay": _safe_get(flight, "departure", "delay"),
                 }
             )
-        if not filtered_flights:
-            return f"No flights found for iata code '{airport_iata_code}'."
-        return json.dumps(filtered_flights)
-    except requests.RequestException as exc:
-        return _error_response("fetching flight schedule", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(
+            filtered_flights,
+            message=(
+                ""
+                if filtered_flights
+                else f"No flights found for iata code '{airport_iata_code}'."
+            ),
+        )
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flight schedule", exc)
 
 
@@ -521,9 +710,9 @@ def future_flights_arrival_departure_schedule(
     date: str,
     number_of_flights: int,
 ) -> str:
-    """Get a random sample of future flights for an airport and date."""
+    """Get future flights for an airport and date."""
     try:
-        _validate_positive_int(number_of_flights, "number_of_flights")
+        _validate_limit(number_of_flights, "number_of_flights")
         _validate_iso_date(date, "date")
         normalized_schedule_type = schedule_type.lower()
         if normalized_schedule_type not in {"arrival", "departure"}:
@@ -533,15 +722,15 @@ def future_flights_arrival_departure_schedule(
             "iataCode": airport_iata_code,
             "type": normalized_schedule_type,
             "date": date,
+            "limit": number_of_flights,
         }
         if airline_iata:
             params["airline_iata"] = airline_iata
 
         data = fetch_flight_data("flightsFuture", params)
-        sampled_flights = _sample_data(data.get("data", []), number_of_flights)
 
         filtered_flights = []
-        for flight in sampled_flights:
+        for flight in _take(data.get("data", []), number_of_flights):
             filtered_flights.append(
                 {
                     "airline": _safe_get(flight, "airline", "name"),
@@ -556,46 +745,43 @@ def future_flights_arrival_departure_schedule(
                     "aircraft": _safe_get(flight, "aircraft", "modelText"),
                 }
             )
-        if not filtered_flights:
-            return f"No flights found for iata code '{airport_iata_code}'."
-        return json.dumps(filtered_flights)
-    except requests.RequestException as exc:
-        return _error_response("fetching flight future schedule", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(
+            filtered_flights,
+            message=(
+                ""
+                if filtered_flights
+                else f"No flights found for iata code '{airport_iata_code}'."
+            ),
+        )
+    except TOOL_ERRORS as exc:
         return _error_response("fetching flight future schedule", exc)
 
 
 def random_aircraft_type(number_of_aircraft: int) -> str:
     """Get random aircraft types."""
     try:
-        _validate_positive_int(number_of_aircraft, "number_of_aircraft")
-        data = fetch_flight_data("aircraft_types", {"limit": number_of_aircraft})
-        sampled_aircraft_types = _sample_data(data.get("data", []), number_of_aircraft)
+        _validate_limit(number_of_aircraft, "number_of_aircraft")
 
         aircraft_types = []
-        for aircraft_type in sampled_aircraft_types:
+        for aircraft_type in _fetch_random_page("aircraft_types", number_of_aircraft):
             aircraft_types.append(
                 {
                     "aircraft_name": aircraft_type.get("aircraft_name"),
                     "iata_code": aircraft_type.get("iata_code"),
                 }
             )
-        return json.dumps(aircraft_types)
-    except requests.RequestException as exc:
-        return _error_response("fetching aircraft type", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(aircraft_types)
+    except TOOL_ERRORS as exc:
         return _error_response("fetching aircraft type", exc)
 
 
 def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
     """Get detailed info for random airplanes."""
     try:
-        _validate_positive_int(number_of_airplanes, "number_of_airplanes")
-        data = fetch_flight_data("airplanes", {"limit": number_of_airplanes})
-        sampled_airplanes = _sample_data(data.get("data", []), number_of_airplanes)
+        _validate_limit(number_of_airplanes, "number_of_airplanes")
 
         airplanes = []
-        for airplane in sampled_airplanes:
+        for airplane in _fetch_random_page("airplanes", number_of_airplanes):
             airplanes.append(
                 {
                     "production_line": airplane.get("production_line"),
@@ -611,25 +797,21 @@ def random_airplanes_detailed_info(number_of_airplanes: int) -> str:
                     "first_flight_date": airplane.get("first_flight_date"),
                 }
             )
-        return json.dumps(airplanes)
-    except requests.RequestException as exc:
-        return _error_response("fetching airplanes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(airplanes)
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airplanes", exc)
 
 
 def random_countries_detailed_info(number_of_countries: int) -> str:
     """Get detailed info for random countries."""
     try:
-        _validate_positive_int(number_of_countries, "number_of_countries")
-        data = fetch_flight_data("countries", {"limit": number_of_countries})
-        sampled_countries = _sample_data(data.get("data", []), number_of_countries)
+        _validate_limit(number_of_countries, "number_of_countries")
 
         countries = []
-        for country in sampled_countries:
+        for country in _fetch_random_page("countries", number_of_countries):
             countries.append(
                 {
-                    "country_name": country.get("name"),
+                    "country_name": country.get("country_name"),
                     "capital": country.get("capital"),
                     "currency_code": country.get("currency_code"),
                     "fips_code": country.get("fips_code"),
@@ -643,22 +825,18 @@ def random_countries_detailed_info(number_of_countries: int) -> str:
                     "population": country.get("population"),
                 }
             )
-        return json.dumps(countries)
-    except requests.RequestException as exc:
-        return _error_response("fetching countries", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(countries)
+    except TOOL_ERRORS as exc:
         return _error_response("fetching countries", exc)
 
 
 def random_cities_detailed_info(number_of_cities: int) -> str:
     """Get detailed info for random cities."""
     try:
-        _validate_positive_int(number_of_cities, "number_of_cities")
-        data = fetch_flight_data("cities", {"limit": number_of_cities})
-        sampled_cities = _sample_data(data.get("data", []), number_of_cities)
+        _validate_limit(number_of_cities, "number_of_cities")
 
         cities = []
-        for city in sampled_cities:
+        for city in _fetch_random_page("cities", number_of_cities):
             cities.append(
                 {
                     "gmt": city.get("gmt"),
@@ -672,17 +850,15 @@ def random_cities_detailed_info(number_of_cities: int) -> str:
                     "city_name": city.get("city_name"),
                 }
             )
-        return json.dumps(cities)
-    except requests.RequestException as exc:
-        return _error_response("fetching cities", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+        return _success_response(cities)
+    except TOOL_ERRORS as exc:
         return _error_response("fetching cities", exc)
 
 
 def list_airports(limit: int = 10, offset: int = 0, search: str = "") -> str:
     """List airports (supports basic-plan autocomplete through `search`)."""
     try:
-        _validate_positive_int(limit, "limit")
+        _validate_limit(limit, "limit")
         _validate_non_negative_int(offset, "offset")
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if search:
@@ -702,16 +878,14 @@ def list_airports(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "gmt": airport.get("gmt"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching airports", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airports", exc)
 
 
 def list_airlines(limit: int = 10, offset: int = 0, search: str = "") -> str:
     """List airlines (supports basic-plan autocomplete through `search`)."""
     try:
-        _validate_positive_int(limit, "limit")
+        _validate_limit(limit, "limit")
         _validate_non_negative_int(offset, "offset")
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if search:
@@ -730,9 +904,7 @@ def list_airlines(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "country_iso2": airline.get("country_iso2"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching airlines", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching airlines", exc)
 
 
@@ -745,7 +917,7 @@ def list_routes(
 ) -> str:
     """List routes (available on Basic plan and higher)."""
     try:
-        _validate_positive_int(limit, "limit")
+        _validate_limit(limit, "limit")
         _validate_non_negative_int(offset, "offset")
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if airline_iata:
@@ -768,16 +940,14 @@ def list_routes(
                 "arr_icao": route.get("arr_icao"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching routes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching routes", exc)
 
 
 def list_taxes(limit: int = 10, offset: int = 0, search: str = "") -> str:
     """List aviation taxes (available on all plans)."""
     try:
-        _validate_positive_int(limit, "limit")
+        _validate_limit(limit, "limit")
         _validate_non_negative_int(offset, "offset")
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if search:
@@ -792,40 +962,75 @@ def list_taxes(limit: int = 10, offset: int = 0, search: str = "") -> str:
                 "iata_code": tax.get("iata_code"),
             },
         )
-    except requests.RequestException as exc:
-        return _error_response("fetching taxes", exc)
-    except (KeyError, ValueError, TypeError) as exc:
+    except TOOL_ERRORS as exc:
         return _error_response("fetching taxes", exc)
 
 
 @mcp.tool(
+    name="get_flight_status",
+    description=(
+        "Look up a single flight by its IATA flight number, for the current day or a "
+        "given date. Use this to answer questions about one specific flight."
+    ),
+)
+def get_flight_status_tool(
+    flight_iata: Annotated[
+        str, Field(description="Flight IATA number (for example: AA100).", min_length=2)
+    ],
+    flight_date: Annotated[
+        str,
+        Field(
+            description="Optional date in YYYY-MM-DD format. Defaults to the current day.",
+            examples=["2026-03-01"],
+        ),
+    ] = "",
+) -> str:
+    """Tool wrapper for get_flight_status."""
+    validated_input = GetFlightStatusInput(
+        flight_iata=flight_iata,
+        flight_date=flight_date,
+    )
+    return get_flight_status(
+        flight_iata=validated_input.flight_iata,
+        flight_date=validated_input.flight_date,
+    )
+
+
+@mcp.tool(
     name="flights_with_airline",
-    description="Return a random sample of live flights filtered by airline name.",
+    description="Return live flights filtered by airline name and optional flight status.",
 )
 def flights_with_airline_tool(
     airline_name: Annotated[
         str, Field(description="Airline name to filter flights (for example: Delta Air Lines).")
     ],
     number_of_flights: Annotated[
-        int, Field(description="Number of random flights to return.", gt=0)
+        int, Field(description="Number of flights to return.", gt=0, le=MAX_LIMIT)
     ],
+    flight_status: Annotated[
+        str,
+        Field(
+            description=f"Optional flight status filter. One of: {FLIGHT_STATUS_TEXT}.",
+        ),
+    ] = "",
 ) -> str:
     """Tool wrapper for flights_with_airline."""
     validated_input = FlightsWithAirlineInput(
         airline_name=airline_name,
         number_of_flights=number_of_flights,
+        flight_status=flight_status,
     )
     return flights_with_airline(
         airline_name=validated_input.airline_name,
         number_of_flights=validated_input.number_of_flights,
+        flight_status=validated_input.flight_status,
     )
 
 
 @mcp.tool(
     name="historical_flights_by_date",
     description=(
-        "Return a random sample of historical flights for a date with optional airline "
-        "and route filters."
+        "Return historical flights for a date with optional airline and route filters."
     ),
 )
 def historical_flights_by_date_tool(
@@ -833,7 +1038,7 @@ def historical_flights_by_date_tool(
         str, Field(description="Date in YYYY-MM-DD format.", examples=["2026-03-01"])
     ],
     number_of_flights: Annotated[
-        int, Field(description="Number of random flights to return.", gt=0)
+        int, Field(description="Number of flights to return.", gt=0, le=MAX_LIMIT)
     ],
     airline_iata: Annotated[
         str, Field(description="Optional airline IATA code filter (for example: DL).")
@@ -865,7 +1070,7 @@ def historical_flights_by_date_tool(
 @mcp.tool(
     name="flight_arrival_departure_schedule",
     description=(
-        "Return current-day arrival or departure schedule samples for an airport, "
+        "Return the current-day arrival or departure schedule for an airport, "
         "optionally filtered by airline name."
     ),
 )
@@ -876,7 +1081,7 @@ def flight_arrival_departure_schedule_tool(
     schedule_type: Annotated[str, Field(description="Schedule type: arrival or departure.")],
     airline_name: Annotated[str, Field(description="Optional airline name filter.")] = "",
     number_of_flights: Annotated[
-        int, Field(description="Number of random flights to return.", gt=0)
+        int, Field(description="Number of flights to return.", gt=0, le=MAX_LIMIT)
     ] = 5,
 ) -> str:
     """Tool wrapper for flight_arrival_departure_schedule."""
@@ -896,7 +1101,7 @@ def flight_arrival_departure_schedule_tool(
 
 @mcp.tool(
     name="future_flights_arrival_departure_schedule",
-    description="Return future arrival or departure schedule samples for an airport and date.",
+    description="Return the future arrival or departure schedule for an airport and date.",
 )
 def future_flights_arrival_departure_schedule_tool(
     airport_iata_code: Annotated[
@@ -911,7 +1116,7 @@ def future_flights_arrival_departure_schedule_tool(
         Field(description="Future date in YYYY-MM-DD format.", examples=["2026-03-01"]),
     ] = "",
     number_of_flights: Annotated[
-        int, Field(description="Number of random flights to return.", gt=0)
+        int, Field(description="Number of flights to return.", gt=0, le=MAX_LIMIT)
     ] = 5,
 ) -> str:
     """Tool wrapper for future_flights_arrival_departure_schedule."""
@@ -937,7 +1142,7 @@ def future_flights_arrival_departure_schedule_tool(
 )
 def random_aircraft_type_tool(
     number_of_aircraft: Annotated[
-        int, Field(description="Number of random aircraft types to return.", gt=0)
+        int, Field(description="Number of random aircraft types to return.", gt=0, le=MAX_LIMIT)
     ],
 ) -> str:
     """Tool wrapper for random_aircraft_type."""
@@ -951,7 +1156,7 @@ def random_aircraft_type_tool(
 )
 def random_airplanes_detailed_info_tool(
     number_of_airplanes: Annotated[
-        int, Field(description="Number of random airplanes to return.", gt=0)
+        int, Field(description="Number of random airplanes to return.", gt=0, le=MAX_LIMIT)
     ],
 ) -> str:
     """Tool wrapper for random_airplanes_detailed_info."""
@@ -969,7 +1174,7 @@ def random_airplanes_detailed_info_tool(
 )
 def random_countries_detailed_info_tool(
     number_of_countries: Annotated[
-        int, Field(description="Number of random countries to return.", gt=0)
+        int, Field(description="Number of random countries to return.", gt=0, le=MAX_LIMIT)
     ],
 ) -> str:
     """Tool wrapper for random_countries_detailed_info."""
@@ -987,7 +1192,7 @@ def random_countries_detailed_info_tool(
 )
 def random_cities_detailed_info_tool(
     number_of_cities: Annotated[
-        int, Field(description="Number of random cities to return.", gt=0)
+        int, Field(description="Number of random cities to return.", gt=0, le=MAX_LIMIT)
     ],
 ) -> str:
     """Tool wrapper for random_cities_detailed_info."""
@@ -1000,7 +1205,9 @@ def random_cities_detailed_info_tool(
     description="List airports with pagination and optional search.",
 )
 def list_airports_tool(
-    limit: Annotated[int, Field(description="Maximum number of airports to return.", gt=0)] = 10,
+    limit: Annotated[
+        int, Field(description="Maximum number of airports to return.", gt=0, le=MAX_LIMIT)
+    ] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
     search: Annotated[
         str, Field(description="Optional airport search text for autocomplete.")
@@ -1020,7 +1227,9 @@ def list_airports_tool(
     description="List airlines with pagination and optional search.",
 )
 def list_airlines_tool(
-    limit: Annotated[int, Field(description="Maximum number of airlines to return.", gt=0)] = 10,
+    limit: Annotated[
+        int, Field(description="Maximum number of airlines to return.", gt=0, le=MAX_LIMIT)
+    ] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
     search: Annotated[
         str, Field(description="Optional airline search text for autocomplete.")
@@ -1040,7 +1249,9 @@ def list_airlines_tool(
     description="List routes with pagination and optional airline/departure/arrival filters.",
 )
 def list_routes_tool(
-    limit: Annotated[int, Field(description="Maximum number of routes to return.", gt=0)] = 10,
+    limit: Annotated[
+        int, Field(description="Maximum number of routes to return.", gt=0, le=MAX_LIMIT)
+    ] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
     airline_iata: Annotated[
         str, Field(description="Optional airline IATA code filter.")
@@ -1075,7 +1286,7 @@ def list_routes_tool(
 )
 def list_taxes_tool(
     limit: Annotated[
-        int, Field(description="Maximum number of tax records to return.", gt=0)
+        int, Field(description="Maximum number of tax records to return.", gt=0, le=MAX_LIMIT)
     ] = 10,
     offset: Annotated[int, Field(description="Offset for pagination.", ge=0)] = 0,
     search: Annotated[str, Field(description="Optional tax search text.")] = "",
@@ -1086,6 +1297,26 @@ def list_taxes_tool(
         limit=validated_input.limit,
         offset=validated_input.offset,
         search=validated_input.search,
+    )
+
+
+@mcp.prompt(
+    name="plan_flight_status_lookup",
+    description="Generate a plan for checking the status of one specific flight.",
+)
+def plan_flight_status_lookup(
+    flight_iata: Annotated[str, Field(description="Flight IATA number (for example: AA100).")],
+    flight_date: Annotated[
+        str,
+        Field(description="Optional date in YYYY-MM-DD format.", examples=["2026-03-01"]),
+    ] = "",
+) -> str:
+    """Prompt for guiding a single-flight status lookup."""
+    return (
+        f"Use the `get_flight_status` tool with flight_iata='{flight_iata}' and "
+        f"flight_date='{flight_date}'. The first record is the operating carrier and any "
+        "records after it are codeshares of the same flight, so report the first record "
+        "and mention the codeshares only if asked."
     )
 
 
@@ -1209,9 +1440,11 @@ def aviationstack_endpoints_resource() -> str:
 def tool_input_examples_resource(tool_name: str) -> str:
     """Resource returning sample payload for a tool."""
     samples = {
+        "get_flight_status": {"flight_iata": "AA100", "flight_date": "2026-03-01"},
         "flights_with_airline": {
             "airline_name": "Delta Air Lines",
             "number_of_flights": 5,
+            "flight_status": "active",
         },
         "historical_flights_by_date": {
             "flight_date": "2026-03-01",

@@ -9,3 +9,9 @@ wheels/
 # Virtual environments
 .venv
 .env
+# Coverage
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
