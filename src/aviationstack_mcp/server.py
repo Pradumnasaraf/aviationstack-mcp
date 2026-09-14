@@ -428,6 +428,16 @@ def _success_response(
     return json.dumps(payload)
 
 
+def _operating_flight_first(
+    flights: list[dict[str, Any]], flight_iata: str
+) -> list[dict[str, Any]]:
+    """Order the requested flight ahead of the codeshares the API returns with it."""
+    return sorted(
+        flights,
+        key=lambda flight: _safe_get(flight, "flight", "iata") != flight_iata,
+    )
+
+
 def _take(items: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
     """Return at most `count` records, preserving the order the API sent them in."""
     _validate_positive_int(count, "count")
@@ -546,7 +556,7 @@ def get_flight_status(flight_iata: str, flight_date: str = "") -> str:
         data = fetch_flight_data("flights", params)
 
         flights = []
-        for flight in data.get("data", []):
+        for flight in _operating_flight_first(data.get("data", []), params["flight_iata"]):
             flights.append(
                 {
                     "flight_date": flight.get("flight_date"),

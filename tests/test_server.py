@@ -148,6 +148,22 @@ class ResponseEnvelopeTests(unittest.TestCase):
         self.assertEqual(parsed["data"][0]["flight_number"], "AA100")
         self.assertEqual(parsed["data"][0]["arrival_baggage"], "5")
 
+    def test_requested_flight_is_listed_before_its_codeshares(self):
+        """The API returns codeshares alongside the flight, so the exact match leads."""
+        payload = {
+            "data": [
+                {"flight": {"iata": "BA1511"}, "airline": {"name": "British Airways"}},
+                {"flight": {"iata": "AA100"}, "airline": {"name": "American Airlines"}},
+            ]
+        }
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.get_flight_status(flight_iata="AA100"))
+
+        self.assertEqual(parsed["count"], 2)
+        self.assertEqual(parsed["data"][0]["flight_number"], "AA100")
+
     def test_empty_result_is_a_success_with_message(self):
         """An empty result is still a success envelope, not a bare string."""
         with patch(
