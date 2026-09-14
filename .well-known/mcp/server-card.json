@@ -2,7 +2,7 @@
   "serverInfo": {
     "name": "aviationstack-mcp",
     "title": "Aviationstack MCP",
-    "version": "1.5.1",
+    "version": "1.6.0",
     "description": "MCP server for Aviationstack flight, schedule, and aviation reference data.",
     "configSchema": {
       "type": "object",
@@ -21,8 +21,49 @@
   },
   "tools": [
     {
+      "name": "get_flight_status",
+      "description": "Look up a single flight by its IATA flight number, for the current day or a given date. Use this to answer questions about one specific flight.",
+      "inputSchema": {
+        "properties": {
+          "flight_iata": {
+            "description": "Flight IATA number (for example: AA100).",
+            "minLength": 2,
+            "title": "Flight Iata",
+            "type": "string"
+          },
+          "flight_date": {
+            "default": "",
+            "description": "Optional date in YYYY-MM-DD format. Defaults to the current day.",
+            "examples": [
+              "2026-03-01"
+            ],
+            "title": "Flight Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight_iata"
+        ],
+        "title": "get_flight_status_toolArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_flight_status_toolOutput",
+        "type": "object"
+      }
+    },
+    {
       "name": "flights_with_airline",
-      "description": "Return a random sample of live flights filtered by airline name.",
+      "description": "Return live flights filtered by airline name and optional flight status.",
       "inputSchema": {
         "properties": {
           "airline_name": {
@@ -31,10 +72,17 @@
             "type": "string"
           },
           "number_of_flights": {
-            "description": "Number of random flights to return.",
+            "description": "Number of flights to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Flights",
             "type": "integer"
+          },
+          "flight_status": {
+            "default": "",
+            "description": "Optional flight status filter. One of: scheduled, active, landed, cancelled, incident, diverted.",
+            "title": "Flight Status",
+            "type": "string"
           }
         },
         "required": [
@@ -60,7 +108,7 @@
     },
     {
       "name": "historical_flights_by_date",
-      "description": "Return a random sample of historical flights for a date with optional airline and route filters.",
+      "description": "Return historical flights for a date with optional airline and route filters.",
       "inputSchema": {
         "properties": {
           "flight_date": {
@@ -72,8 +120,9 @@
             "type": "string"
           },
           "number_of_flights": {
-            "description": "Number of random flights to return.",
+            "description": "Number of flights to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Flights",
             "type": "integer"
           },
@@ -119,7 +168,7 @@
     },
     {
       "name": "flight_arrival_departure_schedule",
-      "description": "Return current-day arrival or departure schedule samples for an airport, optionally filtered by airline name.",
+      "description": "Return the current-day arrival or departure schedule for an airport, optionally filtered by airline name.",
       "inputSchema": {
         "properties": {
           "airport_iata_code": {
@@ -141,8 +190,9 @@
           },
           "number_of_flights": {
             "default": 5,
-            "description": "Number of random flights to return.",
+            "description": "Number of flights to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Flights",
             "type": "integer"
           }
@@ -170,7 +220,7 @@
     },
     {
       "name": "future_flights_arrival_departure_schedule",
-      "description": "Return future arrival or departure schedule samples for an airport and date.",
+      "description": "Return the future arrival or departure schedule for an airport and date.",
       "inputSchema": {
         "properties": {
           "airport_iata_code": {
@@ -201,8 +251,9 @@
           },
           "number_of_flights": {
             "default": 5,
-            "description": "Number of random flights to return.",
+            "description": "Number of flights to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Flights",
             "type": "integer"
           }
@@ -236,6 +287,7 @@
           "number_of_aircraft": {
             "description": "Number of random aircraft types to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Aircraft",
             "type": "integer"
           }
@@ -268,6 +320,7 @@
           "number_of_airplanes": {
             "description": "Number of random airplanes to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Airplanes",
             "type": "integer"
           }
@@ -300,6 +353,7 @@
           "number_of_countries": {
             "description": "Number of random countries to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Countries",
             "type": "integer"
           }
@@ -332,6 +386,7 @@
           "number_of_cities": {
             "description": "Number of random cities to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Number Of Cities",
             "type": "integer"
           }
@@ -365,6 +420,7 @@
             "default": 10,
             "description": "Maximum number of airports to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Limit",
             "type": "integer"
           },
@@ -408,6 +464,7 @@
             "default": 10,
             "description": "Maximum number of airlines to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Limit",
             "type": "integer"
           },
@@ -451,6 +508,7 @@
             "default": 10,
             "description": "Maximum number of routes to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Limit",
             "type": "integer"
           },
@@ -506,6 +564,7 @@
             "default": 10,
             "description": "Maximum number of tax records to return.",
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Limit",
             "type": "integer"
           },
@@ -561,6 +620,22 @@
     }
   ],
   "prompts": [
+    {
+      "name": "plan_flight_status_lookup",
+      "description": "Generate a plan for checking the status of one specific flight.",
+      "arguments": [
+        {
+          "name": "flight_iata",
+          "description": "Flight IATA number (for example: AA100).",
+          "required": true
+        },
+        {
+          "name": "flight_date",
+          "description": "Optional date in YYYY-MM-DD format.",
+          "required": false
+        }
+      ]
+    },
     {
       "name": "plan_airline_flight_lookup",
       "description": "Generate a concise plan for querying live flights for an airline.",

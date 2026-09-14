@@ -39,6 +39,12 @@ Homepage = "https://github.com/pradumnasaraf/aviationstack-mcp"
 Repository = "https://github.com/pradumnasaraf/aviationstack-mcp"
 Issues = "https://github.com/pradumnasaraf/aviationstack-mcp/issues"
 
+[dependency-groups]
+dev = [
+    "coverage>=7.0",
+    "pylint>=3.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

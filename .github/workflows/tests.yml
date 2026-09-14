@@ -25,7 +25,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
+          pip install coverage
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
-          python -m unittest discover -s tests -v
+          coverage run --source=aviationstack_mcp -m unittest discover -s tests -v
+          coverage report --fail-under=95
+
+      - name: Verify the MCP server card matches the server
+        run: |
+          python scripts/generate_server_card.py --check
