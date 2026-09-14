@@ -1,4 +1,5 @@
 """Unit tests for MCP server helpers and tool wrappers."""
+# pylint: disable=protected-access
 
 import json
 import os
@@ -10,6 +11,14 @@ from aviationstack_mcp import server
 RESTRICTED_PLAN_MESSAGE = (
     "Your current subscription plan does not support this API function."
 )
+
+RESTRICTED_PLAN_PAYLOAD = {
+    "error": {
+        "code": "function_access_restricted",
+        "type": "api_error",
+        "message": RESTRICTED_PLAN_MESSAGE,
+    }
+}
 
 
 class MockResponse:
@@ -30,107 +39,434 @@ class MockResponse:
             raise server.requests.HTTPError("403 Client Error: Forbidden")
 
 
-class ServerToolTests(unittest.TestCase):
-    """Behavioral tests for server tool functions."""
+class RecordingGet:
+    """Stub for requests.get that records the params it was called with."""
+
+    def __init__(self, payload):
+        """Store the payload to return and prepare the call log."""
+        self.payload = payload
+        self.calls = []
+
+    def __call__(self, url, params=None, timeout=None):
+        """Record the request and return the configured payload."""
+        self.calls.append({"url": url, "params": params or {}, "timeout": timeout})
+        return MockResponse(self.payload)
+
+    def last_params(self):
+        """Return the params of the most recent recorded request."""
+        return self.calls[-1]["params"]
+
+
+def flight_payload():
+    """Return a minimal /flights response body."""
+    return {
+        "pagination": {"limit": 1, "offset": 0, "count": 1, "total": 1},
+        "data": [
+            {
+                "flight_date": "2026-03-01",
+                "flight_status": "active",
+                "flight": {"iata": "AA100"},
+                "airline": {"name": "American Airlines"},
+                "departure": {
+                    "airport": "John F Kennedy International",
+                    "iata": "JFK",
+                    "scheduled": "2026-03-01T18:00:00+00:00",
+                    "terminal": "8",
+                    "gate": "12",
+                    "delay": 5,
+                },
+                "arrival": {
+                    "airport": "Heathrow",
+                    "iata": "LHR",
+                    "scheduled": "2026-03-02T06:00:00+00:00",
+                    "terminal": "3",
+                    "gate": "A1",
+                    "baggage": "5",
+                    "delay": None,
+                },
+            }
+        ],
+    }
+
+
+class SecretScrubbingTests(unittest.TestCase):
+    """The API key must never reach the client through an error message."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "secret-key-value"
+
+    def test_scrub_secrets_redacts_access_key_query_param(self):
+        """The access_key query parameter should be redacted."""
+        text = "url: /v1/airports?access_key=secret-key-value&limit=5"
+        self.assertEqual(
+            server._scrub_secrets(text), "url: /v1/airports?access_key=***&limit=5"
+        )
+
+    def test_scrub_secrets_redacts_bare_key_occurrence(self):
+        """A bare key occurrence outside a query string should also be redacted."""
+        self.assertNotIn(
+            "secret-key-value", server._scrub_secrets("key was secret-key-value here")
+        )
+
+    def test_connection_error_does_not_leak_api_key(self):
+        """requests puts the request URL in connection errors, so it must be scrubbed."""
+
+        def raise_connection_error(url, params=None, timeout=None):
+            del timeout
+            prepared = server.requests.Request("GET", url, params=params).prepare()
+            raise server.requests.exceptions.ConnectionError(
+                f"Max retries exceeded with url: {prepared.url}"
+            )
+
+        with patch("aviationstack_mcp.server.requests.get", raise_connection_error):
+            output = server.list_airports(limit=5)
+
+        self.assertNotIn("secret-key-value", output)
+        parsed = json.loads(output)
+        self.assertFalse(parsed["ok"])
+        self.assertIn("access_key=***", parsed["error"])
+
+
+class ResponseEnvelopeTests(unittest.TestCase):
+    """Every tool returns the same success and error envelope."""
 
     def setUp(self):
         """Set a deterministic API key for tests."""
         os.environ["AVIATION_STACK_API_KEY"] = "test-key"
 
+    def test_success_envelope_shape(self):
+        """Success responses carry ok, count and data."""
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse(flight_payload()),
+        ):
+            parsed = json.loads(server.get_flight_status(flight_iata="AA100"))
+
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["count"], 1)
+        self.assertEqual(parsed["data"][0]["flight_number"], "AA100")
+        self.assertEqual(parsed["data"][0]["arrival_baggage"], "5")
+
+    def test_empty_result_is_a_success_with_message(self):
+        """An empty result is still a success envelope, not a bare string."""
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse({"data": []}),
+        ):
+            parsed = json.loads(server.get_flight_status(flight_iata="ZZ999"))
+
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["count"], 0)
+        self.assertEqual(parsed["data"], [])
+        self.assertIn("ZZ999", parsed["message"])
+
+    def test_list_tools_expose_pagination_totals(self):
+        """Reference listings pass the API pagination block through to the caller."""
+        payload = {
+            "pagination": {"limit": 1, "offset": 0, "count": 1, "total": 6427},
+            "data": [{"airport_name": "San Francisco International", "iata_code": "SFO"}],
+        }
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.list_airports(limit=1, offset=0, search="San"))
+
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["data"][0]["iata_code"], "SFO")
+        self.assertEqual(parsed["pagination"]["total"], 6427)
+
+    def test_error_envelope_preserves_api_error_code(self):
+        """API errors are mapped into the shared error envelope."""
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse(RESTRICTED_PLAN_PAYLOAD, status_ok=False),
+        ):
+            parsed = json.loads(server.list_routes(limit=1, offset=0, airline_iata="DL"))
+
+        self.assertFalse(parsed["ok"])
+        self.assertEqual(parsed["context"], "fetching routes")
+        self.assertIn("function_access_restricted", parsed["error"])
+
+
+class ValidationTests(unittest.TestCase):
+    """Input validation happens before any request is made."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+
+    def test_limit_above_max_is_rejected(self):
+        """A limit beyond MAX_LIMIT is refused so one call cannot drain the quota."""
+        parsed = json.loads(server.list_airports(limit=server.MAX_LIMIT + 1))
+        self.assertFalse(parsed["ok"])
+        self.assertIn(str(server.MAX_LIMIT), parsed["error"])
+
+    def test_limit_at_max_is_accepted(self):
+        """The boundary value itself is allowed."""
+        with patch(
+            "aviationstack_mcp.server.requests.get",
+            return_value=MockResponse({"data": []}),
+        ):
+            parsed = json.loads(server.list_airports(limit=server.MAX_LIMIT))
+        self.assertTrue(parsed["ok"])
+
+    def test_unknown_flight_status_is_rejected(self):
+        """An unsupported flight_status value is refused with the valid choices."""
+        parsed = json.loads(
+            server.flights_with_airline(
+                airline_name="Delta Air Lines",
+                number_of_flights=1,
+                flight_status="airborne",
+            )
+        )
+        self.assertFalse(parsed["ok"])
+        self.assertIn("scheduled", parsed["error"])
+
     def test_future_flights_invalid_date_returns_structured_error(self):
         """Invalid date format should return the shared error envelope."""
-        output = server.future_flights_arrival_departure_schedule(
-            airport_iata_code="JFK",
-            schedule_type="departure",
-            airline_iata="DL",
-            date="2026/03/01",
-            number_of_flights=1,
+        parsed = json.loads(
+            server.future_flights_arrival_departure_schedule(
+                airport_iata_code="JFK",
+                schedule_type="departure",
+                airline_iata="DL",
+                date="2026/03/01",
+                number_of_flights=1,
+            )
         )
-        parsed = json.loads(output)
         self.assertFalse(parsed["ok"])
         self.assertEqual(parsed["context"], "fetching flight future schedule")
         self.assertIn("YYYY-MM-DD", parsed["error"])
 
     def test_historical_flights_invalid_date_returns_structured_error(self):
         """Historical flights should validate date format consistently."""
-        output = server.historical_flights_by_date(
-            flight_date="01-03-2026",
-            number_of_flights=1,
-            airline_iata="DL",
-            dep_iata="JFK",
-            arr_iata="LAX",
+        parsed = json.loads(
+            server.historical_flights_by_date(
+                flight_date="01-03-2026",
+                number_of_flights=1,
+                airline_iata="DL",
+                dep_iata="JFK",
+                arr_iata="LAX",
+            )
         )
-        parsed = json.loads(output)
         self.assertFalse(parsed["ok"])
         self.assertEqual(parsed["context"], "fetching historical flights")
         self.assertIn("YYYY-MM-DD", parsed["error"])
+
+    def test_invalid_schedule_type_is_rejected(self):
+        """Schedule type is restricted to arrival or departure."""
+        parsed = json.loads(
+            server.flight_arrival_departure_schedule(
+                airport_iata_code="SFO",
+                schedule_type="sideways",
+                airline_name="",
+                number_of_flights=1,
+            )
+        )
+        self.assertFalse(parsed["ok"])
+        self.assertIn("arrival", parsed["error"])
 
     def test_fetch_flight_data_surfaces_api_error_body(self):
         """API error body should be preserved in raised exceptions."""
         with patch(
             "aviationstack_mcp.server.requests.get",
-            return_value=MockResponse(
-                {
-                    "error": {
-                        "code": "function_access_restricted",
-                        "type": "api_error",
-                        "message": RESTRICTED_PLAN_MESSAGE,
-                    }
-                },
-                status_ok=False,
-            ),
+            return_value=MockResponse(RESTRICTED_PLAN_PAYLOAD, status_ok=False),
         ):
             with self.assertRaises(ValueError) as ctx:
                 server.fetch_flight_data("routes", {"limit": 1})
+
         self.assertIn("function_access_restricted", str(ctx.exception))
-        self.assertIn("subscription plan", str(ctx.exception))
+        self.assertIn(RESTRICTED_PLAN_MESSAGE, str(ctx.exception))
 
-    def test_list_routes_returns_structured_error_envelope(self):
-        """Route listing should map API failures into structured errors."""
+
+class RequestParameterTests(unittest.TestCase):
+    """Tools must send the filters and limits they advertise."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+
+    def test_timetable_sends_limit_to_the_api(self):
+        """The schedule tool bounds the response server-side instead of over-fetching."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.flight_arrival_departure_schedule(
+                airport_iata_code="SFO",
+                schedule_type="departure",
+                airline_name="",
+                number_of_flights=3,
+            )
+        self.assertEqual(recorder.last_params()["limit"], 3)
+        self.assertEqual(recorder.last_params()["type"], "departure")
+
+    def test_future_flights_sends_limit_to_the_api(self):
+        """The future schedule tool also bounds the response server-side."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.future_flights_arrival_departure_schedule(
+                airport_iata_code="SFO",
+                schedule_type="arrival",
+                airline_iata="UA",
+                date="2026-03-01",
+                number_of_flights=4,
+            )
+        self.assertEqual(recorder.last_params()["limit"], 4)
+        self.assertEqual(recorder.last_params()["date"], "2026-03-01")
+
+    def test_get_flight_status_normalises_flight_number(self):
+        """Flight numbers are upper-cased and trimmed before being sent."""
+        recorder = RecordingGet(flight_payload())
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.get_flight_status(flight_iata="  aa100 ")
+        self.assertEqual(recorder.last_params()["flight_iata"], "AA100")
+        self.assertNotIn("flight_date", recorder.last_params())
+
+    def test_flight_status_filter_is_forwarded(self):
+        """A valid flight_status filter reaches the API in lower case."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.flights_with_airline(
+                airline_name="Delta Air Lines",
+                number_of_flights=2,
+                flight_status="ACTIVE",
+            )
+        self.assertEqual(recorder.last_params()["flight_status"], "active")
+
+    def test_api_key_is_sent_as_access_key(self):
+        """The key is passed as the access_key query parameter."""
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.list_taxes(limit=1)
+        self.assertEqual(recorder.last_params()["access_key"], "test-key")
+
+
+class RandomSamplingTests(unittest.TestCase):
+    """The random_* tools must actually vary the records they return."""
+
+    def setUp(self):
+        """Reset the cached endpoint totals and set an API key."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+        server._ENDPOINT_TOTALS.clear()
+
+    def tearDown(self):
+        """Leave no cached totals behind for other tests."""
+        server._ENDPOINT_TOTALS.clear()
+
+    def test_first_call_reads_from_offset_zero_and_caches_total(self):
+        """Without a known total the first call starts at offset 0 and learns it."""
+        recorder = RecordingGet(
+            {
+                "pagination": {"limit": 2, "offset": 0, "count": 2, "total": 312},
+                "data": [{"aircraft_name": "A320"}, {"aircraft_name": "B738"}],
+            }
+        )
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            parsed = json.loads(server.random_aircraft_type(number_of_aircraft=2))
+
+        self.assertEqual(recorder.last_params()["offset"], 0)
+        self.assertEqual(server._ENDPOINT_TOTALS["aircraft_types"], 312)
+        self.assertEqual(parsed["count"], 2)
+
+    def test_later_calls_use_a_random_offset_within_the_total(self):
+        """Once the total is known the offset is randomised inside the dataset."""
+        server._ENDPOINT_TOTALS["cities"] = 9000
+        recorder = RecordingGet({"data": [{"city_name": "Paris"}]})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            with patch("aviationstack_mcp.server.random.randint", return_value=4321):
+                server.random_cities_detailed_info(number_of_cities=1)
+
+        self.assertEqual(recorder.last_params()["offset"], 4321)
+
+    def test_random_offset_never_exceeds_the_last_page(self):
+        """The offset is bounded so the API always has `count` records left to return."""
+        server._ENDPOINT_TOTALS["countries"] = 250
+        captured = {}
+
+        def fake_randint(low, high):
+            captured["low"] = low
+            captured["high"] = high
+            return high
+
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            with patch("aviationstack_mcp.server.random.randint", fake_randint):
+                server.random_countries_detailed_info(number_of_countries=10)
+
+        self.assertEqual(captured["low"], 0)
+        self.assertEqual(captured["high"], 240)
+
+    def test_single_request_per_call(self):
+        """Randomising the offset must not cost an extra API request."""
+        server._ENDPOINT_TOTALS["airplanes"] = 19000
+        recorder = RecordingGet({"data": []})
+        with patch("aviationstack_mcp.server.requests.get", recorder):
+            server.random_airplanes_detailed_info(number_of_airplanes=5)
+        self.assertEqual(len(recorder.calls), 1)
+
+
+class ReferenceListingTests(unittest.TestCase):
+    """The list_* tools map API payloads onto their documented fields."""
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+
+    def test_list_airlines_maps_records(self):
+        """Airline records are reduced to the documented fields."""
+        payload = {"data": [{"airline_name": "Delta Air Lines", "iata_code": "DL"}]}
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.list_airlines(limit=1, search="Delta"))
+        self.assertEqual(parsed["data"][0]["airline_name"], "Delta Air Lines")
+
+    def test_list_routes_maps_records(self):
+        """Route records are reduced to the documented fields."""
+        payload = {"data": [{"airline_iata": "DL", "dep_iata": "JFK", "arr_iata": "LAX"}]}
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.list_routes(limit=1, airline_iata="DL"))
+        self.assertEqual(parsed["data"][0]["arr_iata"], "LAX")
+
+    def test_list_taxes_maps_records(self):
+        """Tax records are reduced to the documented fields."""
+        payload = {"data": [{"tax_id": "1", "tax_name": "Passenger Fee", "iata_code": "US"}]}
+        with patch(
+            "aviationstack_mcp.server.requests.get", return_value=MockResponse(payload)
+        ):
+            parsed = json.loads(server.list_taxes(limit=1, search="US"))
+        self.assertEqual(parsed["data"][0]["tax_name"], "Passenger Fee")
+
+    def test_flights_with_airline_maps_records(self):
+        """Live flight records are reduced to the documented fields."""
         with patch(
             "aviationstack_mcp.server.requests.get",
-            return_value=MockResponse(
-                {
-                    "error": {
-                        "code": "function_access_restricted",
-                        "type": "api_error",
-                        "message": RESTRICTED_PLAN_MESSAGE,
-                    }
-                },
-                status_ok=False,
-            ),
+            return_value=MockResponse(flight_payload()),
         ):
-            output = server.list_routes(limit=1, offset=0, airline_iata="DL")
-        parsed = json.loads(output)
-        self.assertFalse(parsed["ok"])
-        self.assertEqual(parsed["context"], "fetching routes")
-        self.assertIn("function_access_restricted", parsed["error"])
+            parsed = json.loads(
+                server.flights_with_airline(
+                    airline_name="American Airlines", number_of_flights=1
+                )
+            )
+        self.assertEqual(parsed["data"][0]["departure_gate"], "12")
 
-    def test_list_airports_uses_shared_mapper_path(self):
-        """Airport listing should map API payload into output records."""
+    def test_historical_flights_maps_records(self):
+        """Historical flight records are reduced to the documented fields."""
         with patch(
             "aviationstack_mcp.server.requests.get",
-            return_value=MockResponse(
-                {
-                    "data": [
-                        {
-                            "airport_name": "San Francisco International",
-                            "iata_code": "SFO",
-                            "icao_code": "KSFO",
-                            "city_iata_code": "SFO",
-                            "country_name": "United States",
-                            "country_iso2": "US",
-                            "timezone": "America/Los_Angeles",
-                            "gmt": "-8",
-                        }
-                    ]
-                }
-            ),
+            return_value=MockResponse(flight_payload()),
         ):
-            output = server.list_airports(limit=1, offset=0, search="San")
-        parsed = json.loads(output)
-        self.assertIsInstance(parsed, list)
-        self.assertEqual(parsed[0]["iata_code"], "SFO")
+            parsed = json.loads(
+                server.historical_flights_by_date(
+                    flight_date="2026-03-01", number_of_flights=1
+                )
+            )
+        self.assertEqual(parsed["data"][0]["flight_date"], "2026-03-01")
+
+
+class ServerConstructionTests(unittest.TestCase):
+    """Server creation degrades gracefully on older FastMCP releases."""
 
     def test_create_mcp_server_falls_back_when_config_schema_is_unsupported(self):
         """Server creation should retry without config_schema on older FastMCP versions."""
@@ -152,6 +488,24 @@ class ServerToolTests(unittest.TestCase):
         self.assertEqual(len(call_kwargs), 2)
         self.assertIn("config_schema", call_kwargs[0])
         self.assertNotIn("config_schema", call_kwargs[1])
+
+
+class MissingApiKeyTests(unittest.TestCase):
+    """A missing key is reported clearly instead of hitting the API."""
+
+    def test_missing_api_key_returns_error_envelope(self):
+        """All key environment variables unset should produce a structured error."""
+        for name in (
+            "AVIATION_STACK_API_KEY",
+            "AVIATIONSTACK_API_KEY",
+            "aviationstack_api_key",
+        ):
+            os.environ.pop(name, None)
+
+        parsed = json.loads(server.list_airports(limit=1))
+        self.assertFalse(parsed["ok"])
+        self.assertIn("API key not set", parsed["error"])
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
 
 
 if __name__ == "__main__":
