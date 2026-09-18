@@ -167,7 +167,7 @@ class HistoricalFlightsByDateInput(BaseModel):
 
     flight_date: str = Field(
         ...,
-        description="Date in YYYY-MM-DD format.",
+        description="Past date to query, in YYYY-MM-DD format.",
         examples=["2026-03-01"],
     )
     number_of_flights: int = Field(
