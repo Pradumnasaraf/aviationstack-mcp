@@ -848,5 +848,128 @@ class ValidationHelperTests(unittest.TestCase):
         self.assertIn("departure", parsed["error"])
 
 
+class RecordShapingTests(unittest.TestCase):
+    """Tools must map API records onto the fields they promise.
+
+    These cover the record-building loops, which stay unexecuted when a tool
+    is handed an empty data list. A wrong key name there returns null for
+    every row rather than failing, so only real records catch it.
+    """
+
+    def setUp(self):
+        """Set a deterministic API key for tests."""
+        os.environ["AVIATION_STACK_API_KEY"] = "test-key"
+
+    def test_timetable_record_carries_every_advertised_field(self):
+        """The current-day board maps each timetable field the tool documents."""
+        payload = {
+            "data": [
+                {
+                    "airline": {"name": "Finnair"},
+                    "flight": {"iataNumber": "AY3788"},
+                    "departure": {
+                        "estimatedTime": "2026-03-01T12:17:00.000",
+                        "scheduledTime": "2026-03-01T12:00:00.000",
+                        "actualTime": "2026-03-01T12:20:00.000",
+                        "terminal": "3",
+                        "gate": "B12",
+                        "delay": 17,
+                    },
+                    "arrival": {
+                        "estimatedTime": "2026-03-01T15:05:00.000",
+                        "scheduledTime": "2026-03-01T15:00:00.000",
+                        "iataCode": "HEL",
+                        "terminal": "2",
+                        "gate": "24",
+                    },
+                }
+            ]
+        }
+        with patch("aviationstack_mcp.server.requests.get", RecordingGet(payload)):
+            parsed = json.loads(
+                server.flight_arrival_departure_schedule("LHR", "departure", "", 1)
+            )
+
+        self.assertTrue(parsed["ok"])
+        record = parsed["data"][0]
+        self.assertEqual(record["airline"], "Finnair")
+        self.assertEqual(record["flight_number"], "AY3788")
+        self.assertEqual(record["departure_scheduled_time"], "2026-03-01T12:00:00.000")
+        self.assertEqual(record["departure_actual_time"], "2026-03-01T12:20:00.000")
+        self.assertEqual(record["departure_gate"], "B12")
+        self.assertEqual(record["departure_delay"], 17)
+        self.assertEqual(record["arrival_airport_code"], "HEL")
+        self.assertEqual(record["arrival_terminal"], "2")
+        self.assertNotIn(None, record.values())
+
+    def test_future_flight_record_carries_every_advertised_field(self):
+        """The future board maps each flightsFuture field the tool documents."""
+        payload = {
+            "data": [
+                {
+                    "airline": {"name": "IndiGo"},
+                    "flight": {"iataNumber": "6E4016"},
+                    "departure": {"scheduledTime": "2026-09-22 00:25:00"},
+                    "arrival": {
+                        "scheduledTime": "2026-09-22 17:15:00",
+                        "iataCode": "DEL",
+                        "terminal": "3",
+                        "gate": "A7",
+                    },
+                    "aircraft": {"modelText": "Airbus A320"},
+                }
+            ]
+        }
+        with patch("aviationstack_mcp.server.requests.get", RecordingGet(payload)):
+            parsed = json.loads(
+                server.future_flights_arrival_departure_schedule(
+                    "JFK", "departure", "", "2027-03-01", 1
+                )
+            )
+
+        self.assertTrue(parsed["ok"])
+        record = parsed["data"][0]
+        self.assertEqual(record["airline"], "IndiGo")
+        self.assertEqual(record["flight_number"], "6E4016")
+        self.assertEqual(record["departure_scheduled_time"], "2026-09-22 00:25:00")
+        self.assertEqual(record["arrival_airport_code"], "DEL")
+        self.assertEqual(record["arrival_gate"], "A7")
+        self.assertEqual(record["aircraft"], "Airbus A320")
+        self.assertNotIn(None, record.values())
+
+    def test_airplane_record_carries_every_advertised_field(self):
+        """Detailed airplane records map all eleven documented airplane fields."""
+        payload = {
+            "pagination": {"limit": 1, "offset": 0, "count": 1, "total": 1},
+            "data": [
+                {
+                    "production_line": "Airbus A320",
+                    "plane_owner": "British Airways",
+                    "plane_age": "12",
+                    "model_name": "A320-232",
+                    "model_code": "A320-232",
+                    "plane_series": "232",
+                    "registration_number": "G-EUYA",
+                    "engines_type": "JET",
+                    "engines_count": "2",
+                    "delivery_date": "2014-03-11",
+                    "first_flight_date": "2014-02-20",
+                }
+            ],
+        }
+        with patch("aviationstack_mcp.server.requests.get", RecordingGet(payload)):
+            parsed = json.loads(server.random_airplanes_detailed_info(1))
+
+        self.assertTrue(parsed["ok"])
+        record = parsed["data"][0]
+        self.assertEqual(record["plane_owner"], "British Airways")
+        self.assertEqual(record["registration_number"], "G-EUYA")
+        self.assertEqual(record["model_name"], "A320-232")
+        self.assertEqual(record["engines_count"], "2")
+        self.assertEqual(record["first_flight_date"], "2014-02-20")
+        self.assertEqual(len(record), 11)
+        self.assertNotIn(None, record.values())
+
+
 if __name__ == "__main__":
     unittest.main()
