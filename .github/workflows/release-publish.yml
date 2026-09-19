@@ -20,6 +20,9 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v7
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+
       - name: Generate Tag and Changelog
         id: changelog
         uses: TriPSs/conventional-changelog-action@v6
@@ -29,6 +32,7 @@ jobs:
           create-summary: 'true'
           version-file: './pyproject.toml'
           version-path: 'project.version'
+          pre-commit: '.github/scripts/uv-lock-pre-commit.cjs'
 
       - name: Create GitHub Release
         if: steps.changelog.outputs.skipped == 'false'
