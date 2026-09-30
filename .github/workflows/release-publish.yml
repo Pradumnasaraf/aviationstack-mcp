@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Generate Tag and Changelog
         id: changelog
@@ -65,7 +65,7 @@ jobs:
           test "v$VER" = "$TAG"
 
       - name: Install uv and setup the python version
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Install the project
         run: uv sync --all-groups
